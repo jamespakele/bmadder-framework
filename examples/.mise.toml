@@ -1,0 +1,12 @@
+# Example .mise.toml for a BMADDer project
+# Copy this to your project root and adjust as needed.
+# bootstrap_bmadder.py will create one for you automatically.
+
+[tools]
+python = "3.12"
+uv     = "latest"
+rust   = "stable"      # Remove if not using Rust
+node   = "latest"      # Remove if not using Node
+
+[settings]
+python.uv_venv_auto = true
