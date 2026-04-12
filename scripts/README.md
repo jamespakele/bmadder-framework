@@ -4,7 +4,128 @@ Autonomous AI-driven software development. Feed it a PRD and architecture doc, g
 
 BMADDer is a Ralph Wiggum loop with BMAD state machine gates. A bash orchestrator cycles through story creation (SM), product review (PO gate), development (TDD with build/test/lint feedback), and QA (deep code review) — all using CLI agents with fresh context per invocation. No conversation drift, no hidden state. The filesystem is the memory.
 
-## How It Works
+---
+
+## Two Approaches — Pick One
+
+There are two orchestrator scripts. They are **equal alternatives** — not sequential steps. Pick the one that fits your workflow. Both use the same story format, agent routing, and state machine.
+
+| | `bmadder.sh` | `bmadder-iterative.sh` |
+|---|---|---|
+| **Story creation** | SM reads the entire PRD and shards it into **all** story files in one pass | SM fills in **one** story stub at a time, sequentially |
+| **PO review** | PO reviews **all** DRAFT stories at once in a batch | PO reviews **one** story per SM pass (SM↔PO loop per story) |
+| **Dev + QA** | Dev processes all READY_FOR_DEV stories, then QA audits all PENDING_QA | Full SM→PO→Dev→QA→commit cycle **per story** before moving to the next |
+| **GitHub state** | Incomplete until the entire pipeline finishes — not safely testable mid-run | After every story: code is committed, pushed, and **deployable for testing** |
+| **Best for** | Well-defined PRDs where the full scope is known upfront | Projects where you want to test and validate each increment as it lands |
+| **Trade-off** | Full backlog visible up front; nothing is deployable until all phases complete | Slower overall throughput; but the product grows incrementally and is always in a testable state |
+
+**The deployability difference is the most important distinction:** With `bmadder.sh`, you need to wait for the entire pipeline — plan all, dev all, QA all — before anything on GitHub represents a working product. With `bmadder-iterative.sh`, every completed story is immediately committed and pushed. At any point during the run, the code on GitHub is the latest working increment and can be pulled and tested.
+
+---
+
+### Recommended Combined Workflow (Best of Both)
+
+> **`bmadder-iterative.sh` requires story stub files to exist before it can run.**
+> The SM inside the iterative script fills in existing stubs — it does not shard the PRD into new files.
+> If you run it with no story files in `docs/backlog/stories/`, it will exit with "No stories found to process."
+
+Use `bmadder.sh plan` once to create all story stubs, then hand off to `bmadder-iterative.sh` for incremental delivery:
+
+```bash
+# Step 1: SM shards PRD into story stubs, PO reviews and approves them (one-time batch)
+./scripts/bmadder.sh plan
+
+# Step 2: Implement stories one at a time — each story is a deployable commit
+#   --from-existing skips the per-story SM/PO loop (already done in step 1)
+./scripts/bmadder-iterative.sh --from-existing
+```
+
+This gives you the full backlog visibility of the batch approach (all stories planned upfront from the PRD) with the incremental deployability of the iterative approach (each story is committed and testable as it completes).
+
+---
+
+### `bmadder.sh` — Batch Pipeline
+
+```
+PRD ──→ SM creates ALL stories ──→ PO reviews ALL ──→ Dev all ──→ QA all ──→ MVP
+```
+
+Run phases individually or all at once:
+
+```bash
+./scripts/bmadder.sh cycle     # Full pipeline: plan → dev → qa (with REFIX loops)
+./scripts/bmadder.sh plan      # SM shards PRD into all stories, PO reviews all at once
+./scripts/bmadder.sh dev       # Dev loop only (processes all READY_FOR_DEV)
+./scripts/bmadder.sh qa        # QA audit only (processes all PENDING_QA)
+./scripts/bmadder.sh status    # Show story states and key file checks
+./scripts/bmadder.sh validate  # Validate story frontmatter only
+```
+
+Key options: `--max-iter N` (dev iterations per story, default 10), `--skip-po`, `--skip-sm`, `--story ID`, `--agent AGENT`, `--dry-run`, `--no-commit`, `--timeout SECS`
+
+---
+
+### `bmadder-iterative.sh` — Story-by-Story Pipeline
+
+```
+For each story (one at a time):
+  ┌─ SM↔PO Loop (max 5 passes) ────────────────────────┐
+  │  SM fills in story stub ──→ PO reviews              │
+  │  PO approves ──→ exit loop                          │
+  │  PO rejects  ──→ SM revises ──→ PO reviews again    │
+  └─────────────────────────────────────────────────────┘
+                         │
+                         ▼
+  ┌─ Dev↔QA Loop (max 10 passes) ──────────────────────┐
+  │  Dev implements (TDD: tests first) ──→ PENDING_QA   │
+  │  QA passes ──→ git commit + push ──→ next story     │
+  │  QA fails  ──→ Dev refixes ──→ QA reviews again     │
+  └─────────────────────────────────────────────────────┘
+```
+
+**Important:** The SM in this pipeline fills in an **existing story stub** — it does not shard the PRD into new files. Story stubs (files with `status: "DRAFT"` and minimal content) must exist in `docs/backlog/stories/` before running. The SM reads the stub, the PRD, and the architecture doc, then writes the full story content.
+
+```bash
+./scripts/bmadder-iterative.sh                          # process all DRAFT/REVISE/READY_FOR_DEV/REFIX stories
+./scripts/bmadder-iterative.sh --story STORY-0001       # process only one specific story
+./scripts/bmadder-iterative.sh --start-from STORY-0005  # skip stories before STORY-0005 (resume mid-backlog)
+./scripts/bmadder-iterative.sh --from-existing          # skip SM/PO entirely; jump straight to Dev↔QA for READY_FOR_DEV stories
+./scripts/bmadder-iterative.sh --skip-po                # auto-approve PO gate (rapid prototyping only)
+./scripts/bmadder-iterative.sh --dry-run                # show what would run without executing
+./scripts/bmadder-iterative.sh --no-commit              # skip git commit after each story passes QA
+```
+
+**Options specific to bmadder-iterative.sh:**
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `--max-sm-iter N` | 5 | Max SM↔PO revision loops per story before stalling |
+| `--max-dev-iter N` | 10 | Max Dev↔QA fix loops per story before stalling |
+| `--story ID` | — | Process only this story (e.g., `STORY-0001`) |
+| `--start-from ID` | — | Skip all stories before this ID (resume from mid-backlog) |
+| `--from-existing` | — | Skip SM/PO loop; use stories already at `READY_FOR_DEV` or `REFIX` |
+| `--skip-po` | — | Auto-approve PO gate without review |
+| `--agent AGENT` | — | Force all phases to one agent |
+| `--no-commit` | — | Skip git commit + push after each QA pass |
+| `--timeout SECS` | 1800 | Max seconds per agent invocation |
+| `--dry-run` | — | Preview what would run without executing |
+
+**Environment variable overrides:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `BMADDER_PLAN_AGENT` | claude | Agent for SM and PO phases |
+| `BMADDER_DEV_AGENT` | claude | Default dev agent (overridden per-story by `agent_hint`) |
+| `BMADDER_QA_AGENT` | claude | Agent for QA phase |
+| `BMADDER_AGENT` | — | Force all phases to one agent |
+| `BMADDER_MAX_SM_ITER` | 5 | Max SM↔PO loops per story |
+| `BMADDER_MAX_DEV_ITER` | 10 | Max Dev↔QA loops per story |
+| `BMADDER_STORY_TIMEOUT` | 1800 | Max seconds per agent invocation |
+
+---
+
+## Philosophy
+
 
 ```
 Idea
@@ -73,7 +194,7 @@ Bootstrap ──→ uv run scripts/bootstrap_bmadder.py
 - git
 - At least one agent CLI:
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`) — needed for plan + QA phases
-  - [Codex CLI](https://github.com/openai/codex) (`codex`) — default dev agent
+  - [Codex CLI](https://github.com/openai/codex) (`codex`) — optional dev agent
   - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini`) — optional, UI-only
 
 ### 1. Create your project
@@ -165,13 +286,15 @@ The orchestrator picks the right agent for each phase. Stories carry an `agent_h
 | Dev (backend) | codex | — | Long-horizon coding, strong TDD compliance |
 | Dev (complex logic) | claude | sonnet | Data transforms, config, cross-module logic |
 | Dev (UI/UX) | gemini | — | Multimodal, but rarely used (needs Stitch scaffolding) |
+| Dev (opencode) | opencode | — | General purpose coding with opencode CLI |
 | QA | claude | opus | Deep code review, nuanced quality decisions |
 
 **agent_hint values:**
 
-- `codex` — backend, API, database, infrastructure, AND most frontend. This is the default for all stories.
+- `codex` — backend, API, database, infrastructure, AND most frontend. This is an optional dev agent.
 - `claude` — complex logic, data transforms, config, cross-module dependencies.
 - `gemini` — only if no Stitch scaffolding exists and you need multimodal UI generation. Rare.
+- `opencode` — general purpose coding with opencode CLI (can be used for any story type).
 
 **Override routing:**
 
@@ -181,7 +304,7 @@ The orchestrator picks the right agent for each phase. Stories carry an `agent_h
 
 # Environment variable overrides
 BMADDER_PLAN_AGENT=claude   # Plan phase (default: claude)
-BMADDER_DEV_AGENT=codex     # Dev phase (default: codex)
+BMADDER_DEV_AGENT=claude    # Dev phase (default: claude)
 BMADDER_QA_AGENT=claude     # QA phase (default: claude, uses opus)
 BMADDER_AGENT=claude        # Force ALL phases
 ```
@@ -258,6 +381,7 @@ See `templates/story-template.md` for a blank story you can copy.
 | `--max-iter N` | 10 | Max dev iterations per story before stalling |
 | `--dry-run` | — | Show what would run without executing |
 | `--skip-po` | — | Skip PO gate, auto-approve all drafts (rapid prototyping only) |
+| `--skip-sm` | — | Skip SM story creation, go straight to PO review (use when stories already exist) |
 | `--agent AGENT` | — | Force ALL phases to use this agent |
 | `--no-commit` | — | Skip git commit/push after QA pass |
 | `--timeout SECS` | 1800 | Max seconds per agent invocation |
@@ -271,7 +395,7 @@ See `templates/story-template.md` for a blank story you can copy.
 | `BMADDER_MAX_ITER` | 10 | Max dev iterations per story |
 | `BMADDER_STORY_TIMEOUT` | 1800 | Max seconds per agent invocation |
 | `BMADDER_PLAN_AGENT` | claude | Plan phase agent |
-| `BMADDER_DEV_AGENT` | codex | Dev phase default agent |
+| `BMADDER_DEV_AGENT` | claude | Dev phase default agent |
 | `BMADDER_QA_AGENT` | claude | QA phase agent (uses opus model) |
 
 ## Auth & Billing
@@ -442,7 +566,7 @@ your-project/
 │       ├── scrum-master-guide.md
 │       ├── po-alignment-checklist.md
 │       └── qa-standards.md
-├── .bmad/
+├── _bmad/                        ← Was .bmad/ in older versions (see Modifications Log)
 │   ├── orchestrator-master.md    ← Governing contract
 │   ├── progress.txt              ← Append-only dev log
 │   └── logs/
@@ -467,6 +591,41 @@ your-project/
 #### `validate_stories.py`
 - **Added `--fix` mode to auto-insert missing required sections.**
   After the SM agent was killed by timeout and re-ran, 13 stories (0091–0103) were created without `## PO Alignment` sections, and 2 of those (0102–0103) were also missing `## Implementation Notes`. Root cause: the first SM run created partial files before the timeout, and the second run batch-wrote replacement files using a template that omitted the PO Alignment header. The `--fix` flag inserts stub sections in the canonical order defined by `orchestrator-master.md`, placing each before the next existing section. It does not modify existing content.
+
+#### `bmadder.sh` — Duplicate story prevention
+- **Added `--skip-sm` flag to skip SM and go directly to PO review.**
+  When stories already exist from a previous SM run but haven't been PO-approved yet, re-running `cycle` would trigger the SM again with fresh context. The SM would reimagine the decomposition and create duplicate story files with different slugs but the same story IDs (e.g., `story-0001-project-scaffold.md` alongside `story-0001-project-scaffolding.md`). Two fixes applied:
+  1. `run_cycle()` now checks for DRAFT stories — if any exist, it automatically sets `--skip-sm` and only runs PO review.
+  2. The SM prompt now includes a pre-check step instructing the agent to list existing stories first and only create missing ones.
+  Both are defense-in-depth: the bash check prevents unnecessary SM invocations, and the prompt guard prevents duplicates if SM does run.
+
+### 2026-04-06
+
+#### All scripts — `.bmad/` renamed to `_bmad/`
+- **The framework directory was renamed from `.bmad/` to `_bmad/`.**
+  This aligns with the BMad Method v6 convention (installed via `npx bmad-method@latest install`),
+  which uses `_bmad/` as its directory name. The leading underscore rather than a dot makes the
+  directory visible in file explorers by default and matches the `_bmad-output/` convention used
+  by the BMad CLI installer.
+
+  **If you are reading an older version of these scripts** (or any documentation that references
+  `.bmad/`), update all references to `_bmad/`. The change is purely cosmetic — the directory
+  structure and file contents are identical. Update the `BMAD_DIR` variable in `bmadder.sh` and
+  `bmadder-iterative.sh` if you are migrating an existing project:
+  ```bash
+  # In both bmadder.sh and bmadder-iterative.sh, line ~61:
+  # Old: BMAD_DIR="$ROOT/.bmad"
+  # New: BMAD_DIR="$ROOT/_bmad"
+  mkdir -p _bmad/logs
+  mv .bmad/* _bmad/   # migrate existing logs and files
+  ```
+
+#### `bmadder-iterative.sh` added
+- **Added `bmadder-iterative.sh` as an equal alternative to `bmadder.sh`.**
+  See the **Two Approaches** section at the top of this document for a full comparison.
+  The iterative script processes one story at a time through the complete SM→PO→Dev→QA pipeline
+  before moving on, using per-story SM↔PO loops (`--max-sm-iter`, default 5) and Dev↔QA loops
+  (`--max-dev-iter`, default 10).
 
 ## License
 

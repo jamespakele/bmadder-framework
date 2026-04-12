@@ -13,7 +13,7 @@
 # Agent routing (defaults):
 #   plan (SM + PO)   → claude (sonnet)    Structured reasoning, doc gen
 #   dev (all stories)→ codex              Long-horizon coding, build/test
-#   qa               → claude (opus)      Deep code review, nuanced decisions
+#   qa               → claude (sonnet)      Deep code review, nuanced decisions
 #
 #   Stories carry an `agent_hint` frontmatter field set during planning:
 #     agent_hint: "codex"    → backend, API, database, infra, AND frontend
@@ -58,7 +58,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STORIES_DIR="$ROOT/docs/backlog/stories"
 STANDARDS_DIR="$ROOT/docs/standards"
-BMAD_DIR="$ROOT/.bmad"
+BMAD_DIR="$ROOT/_bmad"
 LOG_FILE="$BMAD_DIR/logs/activity.log"
 PROGRESS_FILE="$BMAD_DIR/progress.txt"
 PROMPT_TMP="$BMAD_DIR/.prompt-tmp.md"
@@ -66,12 +66,13 @@ PROMPT_TMP="$BMAD_DIR/.prompt-tmp.md"
 # --- Defaults ---
 AGENT_OVERRIDE="${BMADDER_AGENT:-}"
 PLAN_AGENT="${BMADDER_PLAN_AGENT:-claude}"
-DEV_AGENT="${BMADDER_DEV_AGENT:-codex}"
+DEV_AGENT="${BMADDER_DEV_AGENT:-claude}"
 QA_AGENT="${BMADDER_QA_AGENT:-claude}"
 MAX_ITER="${BMADDER_MAX_ITER:-10}"
-STORY_TIMEOUT="${BMADDER_STORY_TIMEOUT:-900}"  # 15 min default per story
+STORY_TIMEOUT="${BMADDER_STORY_TIMEOUT:-1800}"  # 30 min default per story
 DRY_RUN=false
 SKIP_PO=false
+SKIP_SM=false
 NO_COMMIT=false
 TARGET_STORY=""
 PHASE="${1:-}"
@@ -84,6 +85,7 @@ while [[ $# -gt 0 ]]; do
         --max-iter)   MAX_ITER="$2"; shift 2 ;;
         --dry-run)    DRY_RUN=true; shift ;;
         --skip-po)    SKIP_PO=true; shift ;;
+        --skip-sm)    SKIP_SM=true; shift ;;
         --agent)      AGENT_OVERRIDE="$2"; shift 2 ;;
         --no-commit)  NO_COMMIT=true; shift ;;
         --timeout)    STORY_TIMEOUT="$2"; shift 2 ;;
@@ -185,13 +187,8 @@ agent_model_flags() {
     local agent="$1" phase="$2"
     case "$agent" in
         claude)
-            # Sonnet for plan (cost-effective), Opus for QA (deep reasoning)
-            # Uses Claude Code aliases: "sonnet" → latest Sonnet, "opus" → latest Opus
-            if [[ "$phase" == "qa" ]]; then
-                echo "--model opus"
-            else
-                echo "--model sonnet"
-            fi
+            # sonnet for all phases — avoids opus limits on long pipeline runs
+            echo "--model sonnet"
             ;;
         *) echo "" ;;  # codex and gemini don't need model flags
     esac
@@ -207,6 +204,9 @@ write_prompt() {
     cat > "$PROMPT_TMP"
     echo "$PROMPT_TMP"
 }
+
+# Gemini rate-limit backoff state (per-story, reset between stories)
+_GEMINI_BACKOFF=30  # seconds, doubles per rate-limited iteration (max 300)
 
 run_agent() {
     local prompt_file="$1"
@@ -228,27 +228,51 @@ run_agent() {
     # All agents get a timeout to prevent infinite hangs.
     # After codex runs, reset the TTY so the script can continue cleanly.
     local rc=0
+    local agent_output_file; agent_output_file=$(mktemp)
     case "$AGENT" in
-        claude)  timeout "$STORY_TIMEOUT" claude --dangerously-skip-permissions $model_flags -p "$(cat "$prompt_file")" < /dev/null || rc=$? ;;
+        claude)  timeout "$STORY_TIMEOUT" claude --dangerously-skip-permissions $model_flags -p "$(cat "$prompt_file")" < /dev/null 2>&1 | tee "$agent_output_file"; rc=${PIPESTATUS[0]} ;;
         codex)
             # Save TTY state, run codex with timeout, restore TTY after
             local tty_settings=""
             tty_settings=$(stty -g 2>/dev/null) || true
-            timeout "$STORY_TIMEOUT" codex exec --full-auto "$(cat "$prompt_file")" || rc=$?
+            timeout "$STORY_TIMEOUT" codex exec --full-auto "$(cat "$prompt_file")" < /dev/null || rc=$?
             # Restore TTY — codex can leave terminal in raw mode
             [[ -n "$tty_settings" ]] && stty "$tty_settings" 2>/dev/null || true
             stty sane 2>/dev/null || true
             ;;
-        gemini)  timeout "$STORY_TIMEOUT" gemini --yolo -p "$(cat "$prompt_file")" < /dev/null || rc=$? ;;
+        gemini)
+            timeout "$STORY_TIMEOUT" gemini --yolo -p "$(cat "$prompt_file")" < /dev/null 2>&1 | tee "$agent_output_file"; rc=${PIPESTATUS[0]}
+            ;;
         *)       err "Unknown agent: $AGENT"; exit 1 ;;
     esac
+
+    # Detect gemini rate-limit (429 / MODEL_CAPACITY_EXHAUSTED in output)
+    local rate_limited=false
+    if [[ "$AGENT" == "gemini" ]] && grep -qiE '429|rateLimitExceeded|MODEL_CAPACITY_EXHAUSTED|No capacity available' "$agent_output_file" 2>/dev/null; then
+        rate_limited=true
+    fi
+    rm -f "$agent_output_file"
 
     # timeout exit code 124 = killed by timeout
     if [[ $rc -eq 124 ]]; then
         warn "Agent killed by timeout (${STORY_TIMEOUT}s)"
+    elif $rate_limited; then
+        warn "Gemini rate-limited (429). Backing off ${_GEMINI_BACKOFF}s before next iteration..."
+        sleep "$_GEMINI_BACKOFF"
+        # Exponential backoff — cap at 300s (5 min)
+        _GEMINI_BACKOFF=$(( _GEMINI_BACKOFF * 2 ))
+        [[ $_GEMINI_BACKOFF -gt 300 ]] && _GEMINI_BACKOFF=300
+        return 1  # signal caller to retry
     elif [[ $rc -ne 0 ]]; then
         warn "Agent exited with code $rc"
     fi
+
+    # Polite cooldown between gemini calls to stay under quota
+    if [[ "$AGENT" == "gemini" && $rc -eq 0 ]]; then
+        info "  [gemini cooldown 15s]"
+        sleep 15
+    fi
+
     return $rc
 }
 
@@ -269,7 +293,7 @@ validate_stories() {
         local s; s=$(get_story_field "$f" "status")
         case "$s" in
             DRAFT|REVISE|READY_FOR_DEV|IN_DEV|PENDING_QA|REFIX|COMPLETED) ;;
-            *) err "  $(basename "$f"): invalid status '$s'"; ((errors++)) ;;
+            *) err "  $(basename "$f"): invalid status '$s'"; ((errors++)) || true ;;
         esac
     done
     [[ $errors -eq 0 ]] && ok "All stories valid." || err "$errors invalid stories."
@@ -300,11 +324,11 @@ show_status() {
     echo -e "${CYAN}  Key Files:${NC}"
     [[ -f "$ROOT/docs/prd.md" ]]              && echo -e "  ${GREEN}✓${NC} docs/prd.md"                || echo -e "  ${RED}✗${NC} docs/prd.md"
     [[ -f "$ROOT/docs/architecture.md" ]]      && echo -e "  ${GREEN}✓${NC} docs/architecture.md"        || echo -e "  ${RED}✗${NC} docs/architecture.md"
-    [[ -f "$BMAD_DIR/orchestrator-master.md" ]] && echo -e "  ${GREEN}✓${NC} .bmad/orchestrator-master.md" || echo -e "  ${RED}✗${NC} .bmad/orchestrator-master.md"
-    [[ -f "$PROGRESS_FILE" ]]                  && echo -e "  ${GREEN}✓${NC} .bmad/progress.txt"           || echo -e "  ${YELLOW}-${NC} .bmad/progress.txt"
+    [[ -f "$BMAD_DIR/orchestrator-master.md" ]] && echo -e "  ${GREEN}✓${NC} _bmad/orchestrator-master.md" || echo -e "  ${RED}✗${NC} _bmad/orchestrator-master.md"
+    [[ -f "$PROGRESS_FILE" ]]                  && echo -e "  ${GREEN}✓${NC} _bmad/progress.txt"           || echo -e "  ${YELLOW}-${NC} _bmad/progress.txt"
     echo ""
     echo -e "${CYAN}  Agent Routing:${NC}"
-    echo -e "  plan → ${PLAN_AGENT} (sonnet)    dev → ${DEV_AGENT}    qa → ${QA_AGENT} (opus)"
+    echo -e "  plan → ${PLAN_AGENT} (sonnet)    dev → ${DEV_AGENT}    qa → ${QA_AGENT} (sonnet)"
     [[ -n "$AGENT_OVERRIDE" ]] && echo -e "  ${YELLOW}⚠ Global override: $AGENT_OVERRIDE${NC}"
     echo ""
 }
@@ -327,20 +351,51 @@ run_plan() {
     [[ -f "$ROOT/docs/architecture.md" ]] || { err "docs/architecture.md missing."; exit 1; }
 
     # --- SM ---
-    AGENT=$(resolve_agent "plan")
-    info "Step 1/2: Scrum Master [$AGENT sonnet]"
-    log_activity "ORCH" "-" "SM_START" "SM sharding via $AGENT"
+    if $SKIP_SM; then
+        warn "Skipping SM (--skip-sm). Using existing stories."
+        log_activity "ORCH" "-" "SM_SKIP" "SM skipped, using existing stories"
+        validate_stories
+        local drafts; drafts=$(count_by_status "DRAFT")
+        info "$drafts existing DRAFT stories found."
+        [[ $drafts -eq 0 ]] && { err "No DRAFT stories found. Run without --skip-sm first."; exit 1; }
+    else
+        AGENT=$(resolve_agent "plan")
+        info "Step 1/2: Scrum Master [$AGENT sonnet]"
+        log_activity "ORCH" "-" "SM_START" "SM sharding via $AGENT"
 
-    local pf
-    pf=$(write_prompt <<'EOF'
-You are the Scrum Master. Your governing contract is @.bmad/orchestrator-master.md
+        local pf
+        pf=$(write_prompt <<'EOF'
+You are the Scrum Master. Your governing contract is @_bmad/orchestrator-master.md
 
 Read:
 @docs/prd.md
 @docs/architecture.md
 @docs/standards/scrum-master-guide.md
 
-Task:
+Pre-check:
+BEFORE creating any stories, list all existing files in docs/backlog/stories/.
+If stories already exist, READ their frontmatter to understand what has been created.
+Do NOT recreate stories that already exist. Only create MISSING stories.
+SKIP stories with status: "READY_FOR_DEV" or "COMPLETED" — they are already approved.
+Only work on stories with status: "REVISE" or stories that don't exist yet.
+
+Revision handling:
+Check for stories with status: "REVISE". For EACH revise story:
+1. Read the ## PO Alignment section — it contains the PO's revision notes.
+2. Address EVERY issue the PO raised (unclear criteria, scope too large, missing deps, etc.).
+3. Update the story content to fix the issues.
+4. Set status: "DRAFT" and po_alignment: "PENDING" so the PO can re-review.
+5. Append a dated note under ## PO Alignment: "SM revision: [what was changed]"
+
+If there are no MISSING stories and no REVISE stories, log that sharding is complete and exit.
+
+UI reference:
+For UI/frontend stories, check docs/ui-mockups/ for Stitch-generated mockups.
+If relevant mockups exist, reference them in the story's ## Context or ## Implementation Notes
+so the dev agent knows which mockup to follow. Example:
+  "See docs/ui-mockups/stitch/kip_login_screen_corporate_b_w_style/ for reference mockup."
+
+Task (for new stories only — skip if all PRD requirements are already covered):
 1. Decompose the PRD into atomic, implementable user stories.
 2. Create each as docs/backlog/stories/story-NNNN-slug.md using the exact
    YAML frontmatter from orchestrator-master.md:
@@ -355,21 +410,23 @@ Task:
    - agent_hint: "codex"   → backend, API, database, infrastructure, AND frontend
    - agent_hint: "claude"  → complex logic, data transforms, config
    Default to "codex" for ALL stories including frontend.
-   Frontend stories reference design templates in src/scaffolding/ (from Stitch).
+   Frontend stories reference design templates in src/scaffolding/ (from Stitch)
+   and UI mockups in docs/ui-mockups/stitch/ (from Google Stitch).
    Do NOT use agent_hint: "gemini" unless explicitly told to.
-8. Log a summary to .bmad/logs/activity.log.
+8. Log a summary to _bmad/logs/activity.log.
 
 Do NOT implement code. Do NOT approve stories.
 EOF
-    )
-    run_agent "$pf" "plan"
-    log_activity "SM" "-" "SM_DONE" "Sharding complete"
-    ok "SM sharding complete."
+        )
+        run_agent "$pf" "plan"
+        log_activity "SM" "-" "SM_DONE" "Sharding complete"
+        ok "SM sharding complete."
 
-    validate_stories
-    local drafts; drafts=$(count_by_status "DRAFT")
-    info "$drafts DRAFT stories created."
-    [[ $drafts -eq 0 ]] && { err "No stories created. Check output."; exit 1; }
+        validate_stories
+        local drafts; drafts=$(count_by_status "DRAFT")
+        info "$drafts DRAFT stories created."
+        [[ $drafts -eq 0 ]] && { err "No stories created. Check output."; exit 1; }
+    fi
 
     # --- PO ---
     if $SKIP_PO; then
@@ -387,7 +444,7 @@ EOF
         log_activity "ORCH" "-" "PO_START" "PO review via $AGENT"
 
         pf=$(write_prompt <<'EOF'
-You are the Product Owner. Your governing contract is @.bmad/orchestrator-master.md
+You are the Product Owner. Your governing contract is @_bmad/orchestrator-master.md
 
 Read:
 @docs/prd.md
@@ -411,7 +468,7 @@ If ANY no:
 - Set status: "REVISE", po_alignment: "REVISE"
 - Append specific revision notes under ## PO Alignment
 
-Log decisions to .bmad/logs/activity.log.
+Log decisions to _bmad/logs/activity.log.
 Do NOT move any story to IN_DEV or PENDING_QA.
 EOF
         )
@@ -471,6 +528,8 @@ run_dev() {
         echo ""
         echo -e "${CYAN}━━━ $story_id: $title [$AGENT / $hint] ━━━${NC}"
 
+        # Reset gemini backoff at start of each story
+        _GEMINI_BACKOFF=30
         update_story_field "$story_file" "status" "IN_DEV"
         log_activity "ORCH" "$story_id" "DEV_START" "Dev loop via $AGENT"
 
@@ -481,7 +540,7 @@ run_dev() {
 
             local pf
             pf=$(write_prompt <<PROMPT_EOF
-You are the Developer. Your governing contract is @.bmad/orchestrator-master.md
+You are the Developer. Your governing contract is @_bmad/orchestrator-master.md
 
 Working on ONE story:
   ID: $story_id
@@ -490,7 +549,7 @@ Working on ONE story:
 Context:
 @docs/architecture.md
 @docs/prd.md
-@.bmad/progress.txt
+@_bmad/progress.txt
 
 Also run: \`git log --oneline -20\` to see what previous iterations built.
 
@@ -513,7 +572,7 @@ Task:
 5. When build/test/lint pass AND all acceptance criteria are met:
    - Update story frontmatter: status: "PENDING_QA"
    - Fill in ## Implementation Notes: files changed, approach, decisions
-6. Append to .bmad/progress.txt:
+6. Append to _bmad/progress.txt:
    - What you did, files modified, decisions, notes for QA
 7. Commit: \`git add -A && git commit -m "feat($story_id): <summary>"\`
 
@@ -537,6 +596,16 @@ PROMPT_EOF
             fi
             info "  $story_id still IN_DEV. Continuing..."
             log_progress "$story_id: iter $iter — in progress ($AGENT)"
+
+            # Inter-iteration delay for gemini to respect quota
+            # Skipped on last iteration to avoid pointless wait before stall check
+            if [[ "$AGENT" == "gemini" && $iter -lt $MAX_ITER ]]; then
+                local st2; st2=$(get_story_field "$story_file" "status")
+                if [[ "$st2" != "PENDING_QA" ]]; then
+                    info "  [gemini inter-iter pause 20s]"
+                    sleep 20
+                fi
+            fi
         done
 
         # Max iter check
@@ -579,12 +648,12 @@ run_qa() {
 
         AGENT=$(resolve_agent "qa" "$story_file")
         echo ""
-        info "QA: $story_id — $title [$AGENT opus]"
-        log_activity "ORCH" "$story_id" "QA_START" "QA via $AGENT opus"
+        info "QA: $story_id — $title [$AGENT sonnet]"
+        log_activity "ORCH" "$story_id" "QA_START" "QA via $AGENT sonnet"
 
         local pf
         pf=$(write_prompt <<PROMPT_EOF
-You are the QA Auditor. Your governing contract is @.bmad/orchestrator-master.md
+You are the QA Auditor. Your governing contract is @_bmad/orchestrator-master.md
 
 Auditing ONE story:
   ID: $story_id
@@ -612,7 +681,7 @@ If ANY check fails:
 - Append under ## QA Notes: what failed, steps to reproduce, fix guidance
 - Do NOT commit
 
-Log to .bmad/logs/activity.log.
+Log to _bmad/logs/activity.log.
 PROMPT_EOF
         )
 
@@ -666,15 +735,24 @@ run_cycle() {
     # Plan if nothing is actionable
     local ready; ready=$(count_by_status "READY_FOR_DEV")
     local refix; refix=$(count_by_status "REFIX")
+    local drafts; drafts=$(count_by_status "DRAFT")
+    local revise; revise=$(count_by_status "REVISE")
     if [[ $ready -eq 0 && $refix -eq 0 ]]; then
-        info "No actionable stories. Running plan..."
+        if [[ $drafts -gt 0 && $revise -eq 0 ]]; then
+            # DRAFTs exist, no revisions needed — skip SM, run PO only
+            info "$drafts DRAFT stories exist. Skipping SM, running PO review..."
+            SKIP_SM=true
+        elif [[ $revise -gt 0 ]]; then
+            # REVISE stories need SM attention before PO re-review
+            info "$revise REVISE stories need SM fixes. Running SM then PO..."
+        fi
         run_plan
     fi
 
     # Dev → QA with REFIX loop
     local pass=0 max_passes=3
     while [[ $pass -lt $max_passes ]]; do
-        ((pass++))
+        ((pass++)) || true
         echo ""
         info "═══ Dev/QA pass $pass/$max_passes ═══"
         run_dev

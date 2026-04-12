@@ -3,9 +3,12 @@ validate_stories.py — BMADder story frontmatter validator.
 Checks all stories for valid YAML frontmatter, required fields,
 valid state machine values, and required markdown sections.
 
-Usage: uv run scripts/validate_stories.py
+Usage:
+  uv run scripts/validate_stories.py          # validate only
+  uv run scripts/validate_stories.py --fix    # fix missing sections, then validate
 """
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -104,7 +107,65 @@ def validate_story(path: Path) -> list[str]:
     return errors
 
 
+# --- Section stubs for --fix mode ---
+SECTION_STUBS = {
+    "## Context": "## Context\n\n_TODO: Add context._\n",
+    "## Requirements": "## Requirements\n\n_TODO: Add requirements._\n",
+    "## Acceptance Criteria": "## Acceptance Criteria\n\n_TODO: Add acceptance criteria._\n",
+    "## Implementation Notes": "## Implementation Notes\n\n_To be filled during development._\n",
+    "## PO Alignment": "## PO Alignment\n\n_Pending PO review._\n",
+    "## QA Notes": "## QA Notes\n\n_To be filled during QA._\n",
+}
+
+
+def fix_story(path: Path) -> list[str]:
+    """Insert missing required sections in canonical order. Returns list of fixes applied."""
+    text = path.read_text(encoding="utf-8")
+    fixes = []
+
+    # Find which sections are missing
+    missing = [s for s in REQUIRED_SECTIONS if s not in text]
+    if not missing:
+        return fixes
+
+    # For each missing section, insert it before the next existing section
+    # in the canonical order, or at end of file.
+    for section in missing:
+        # Re-read text each iteration since we're modifying it
+        text = path.read_text(encoding="utf-8")
+
+        idx = REQUIRED_SECTIONS.index(section)
+        insert_before = None
+
+        # Find the next section that exists in the file
+        for later in REQUIRED_SECTIONS[idx + 1:]:
+            if later in text:
+                insert_before = later
+                break
+
+        stub = SECTION_STUBS[section]
+
+        if insert_before:
+            # Insert before the next existing section
+            text = text.replace(insert_before, stub + "\n" + insert_before)
+        else:
+            # Append at end of file
+            if not text.endswith("\n"):
+                text += "\n"
+            text += "\n" + stub
+
+        path.write_text(text, encoding="utf-8")
+        fixes.append(f"{path.name}: added '{section}'")
+
+    return fixes
+
+
 def main():
+    parser = argparse.ArgumentParser(description="Validate BMADder story files.")
+    parser.add_argument("--fix", action="store_true",
+                        help="Auto-insert missing required sections before validating")
+    args = parser.parse_args()
+
     if not STORIES_DIR.exists():
         print(f"[WARN] {STORIES_DIR} does not exist. No stories to validate.")
         return
@@ -114,6 +175,20 @@ def main():
         print("[WARN] No story files found.")
         return
 
+    # --- Fix pass ---
+    if args.fix:
+        total_fixes = 0
+        for story in stories:
+            fixes = fix_story(story)
+            for f in fixes:
+                print(f"  [FIX]  {f}")
+            total_fixes += len(fixes)
+        if total_fixes:
+            print(f"\n[FIX] Applied {total_fixes} fixes.\n")
+        else:
+            print("[OK] Nothing to fix.\n")
+
+    # --- Validate pass ---
     total_errors = 0
     for story in stories:
         errors = validate_story(story)

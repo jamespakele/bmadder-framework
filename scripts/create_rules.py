@@ -60,9 +60,9 @@ Surfaces:
 - docs/backlog/epics/ – epics as markdown files
 - docs/backlog/stories/ – stories with YAML frontmatter
 - docs/standards/ – coding, QA, and process standards
-- .bmad/ – orchestrator context, logs, framework metadata
-- .bmad/progress.txt – append-only log of dev progress across iterations
-- .bmad/logs/activity.log – structured activity log
+- _bmad/ – orchestrator context, logs, framework metadata
+- _bmad/progress.txt – append-only log of dev progress across iterations
+- _bmad/logs/activity.log – structured activity log
 
 ## 4. Roles
 
@@ -167,7 +167,7 @@ Transition rules:
 
 Each agent invocation starts with a clean context window. No conversation
 state carries between invocations. Agents discover prior work by reading:
-- .bmad/progress.txt (what was done in previous iterations)
+- _bmad/progress.txt (what was done in previous iterations)
 - git log (commit history)
 - Story frontmatter (current status)
 - Implementation Notes section (what the dev did)
@@ -177,10 +177,10 @@ every invocation independently reproducible.
 
 ## 9. Logging
 
-All agents SHOULD log to .bmad/logs/activity.log:
+All agents SHOULD log to _bmad/logs/activity.log:
 YYYY-MM-DDTHH:MM:SSZ | ROLE | STORY_ID(or '-') | ACTION | description
 
-Dev agents MUST append to .bmad/progress.txt after each iteration:
+Dev agents MUST append to _bmad/progress.txt after each iteration:
 - What was done, files changed, decisions made, notes for next iteration
 """
 
@@ -191,7 +191,7 @@ Dev agents MUST append to .bmad/progress.txt after each iteration:
 
 ## 1. Role
 
-You are the Scrum Master. You MUST treat .bmad/orchestrator-master.md as your
+You are the Scrum Master. You MUST treat _bmad/orchestrator-master.md as your
 governing contract. You may not violate its state machine or file conventions.
 
 Your job: transform docs/prd.md + docs/architecture.md into atomic Story files
@@ -242,7 +242,7 @@ Number stories so dependencies come first:
 
 When stories are ready:
 - Ensure all are status: "DRAFT"
-- Log to .bmad/logs/activity.log
+- Log to _bmad/logs/activity.log
 """
 
     # =========================================================================
@@ -252,7 +252,7 @@ When stories are ready:
 
 ## 1. Role
 
-You are the Product Owner. You MUST obey .bmad/orchestrator-master.md.
+You are the Product Owner. You MUST obey _bmad/orchestrator-master.md.
 You are the gatekeeper between planning and development.
 No story proceeds to dev without your explicit approval.
 
@@ -305,7 +305,7 @@ Review ALL drafts together. Check for:
 
 ## 1. Role
 
-You are the QA Auditor. You MUST obey .bmad/orchestrator-master.md.
+You are the QA Auditor. You MUST obey _bmad/orchestrator-master.md.
 You are the final gate before a story is marked COMPLETED.
 You use Claude Opus for deep reasoning on code quality.
 
@@ -355,7 +355,7 @@ You MUST NOT operate on stories outside of PENDING_QA status.
     # =========================================================================
     # WRITE FILES
     # =========================================================================
-    write_text(ROOT / ".bmad/orchestrator-master.md", orchestrator)
+    write_text(ROOT / "_bmad/orchestrator-master.md", orchestrator)
     write_text(ROOT / "docs/standards/scrum-master-guide.md", sm_guide)
     write_text(ROOT / "docs/standards/po-alignment-checklist.md", po_checklist)
     write_text(ROOT / "docs/standards/qa-standards.md", qa_standards)

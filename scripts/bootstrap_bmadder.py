@@ -58,7 +58,7 @@ def check_tool(name: str, check_cmd: list[str]) -> bool:
         version = result.stdout.strip().split("\n")[0]
         print(f"  [OK]   {name}: {version}")
         return True
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except (FileNotFoundError, PermissionError, subprocess.TimeoutExpired):
         print(f"  [MISS] {name}: not found")
         return False
 
@@ -93,7 +93,7 @@ def write_gitignore():
     gitignore = ROOT / ".gitignore"
     entries = [
         "# BMADder",
-        ".bmad/.prompt-tmp.md",
+        "_bmad/.prompt-tmp.md",
         "__pycache__/",
         "*.pyc",
         ".venv/",

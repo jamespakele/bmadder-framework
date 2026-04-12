@@ -21,8 +21,8 @@ def main():
         ROOT / "docs/backlog/epics",
         ROOT / "docs/backlog/stories",
         ROOT / "docs/standards",
-        ROOT / ".bmad",
-        ROOT / ".bmad/logs",
+        ROOT / "_bmad",
+        ROOT / "_bmad/logs",
         ROOT / "src",
         ROOT / "scripts",
     ]
