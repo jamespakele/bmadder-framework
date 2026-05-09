@@ -115,7 +115,7 @@ For each story (one at a time):
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `BMADDER_PLAN_AGENT` | claude | Agent for SM and PO phases |
-| `BMADDER_DEV_AGENT` | claude | Default dev agent (overridden per-story by `agent_hint`) |
+| `BMADDER_DEV_AGENT` | codex | Default dev agent (overridden per-story by `agent_hint`) |
 | `BMADDER_QA_AGENT` | claude | Agent for QA phase |
 | `BMADDER_AGENT` | — | Force all phases to one agent |
 | `BMADDER_MAX_SM_ITER` | 5 | Max SM↔PO loops per story |
@@ -194,7 +194,7 @@ Bootstrap ──→ uv run scripts/bootstrap_bmadder.py
 - git
 - At least one agent CLI:
   - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) (`claude`) — needed for plan + QA phases
-  - [Codex CLI](https://github.com/openai/codex) (`codex`) — optional dev agent
+  - [Codex CLI](https://github.com/openai/codex) (`codex`) — default dev agent
   - [Gemini CLI](https://github.com/google-gemini/gemini-cli) (`gemini`) — optional, UI-only
 
 ### 1. Create your project
@@ -286,15 +286,13 @@ The orchestrator picks the right agent for each phase. Stories carry an `agent_h
 | Dev (backend) | codex | — | Long-horizon coding, strong TDD compliance |
 | Dev (complex logic) | claude | sonnet | Data transforms, config, cross-module logic |
 | Dev (UI/UX) | gemini | — | Multimodal, but rarely used (needs Stitch scaffolding) |
-| Dev (opencode) | opencode | — | General purpose coding with opencode CLI |
 | QA | claude | opus | Deep code review, nuanced quality decisions |
 
 **agent_hint values:**
 
-- `codex` — backend, API, database, infrastructure, AND most frontend. This is an optional dev agent.
+- `codex` — backend, API, database, infrastructure, AND most frontend. This is the default for all stories.
 - `claude` — complex logic, data transforms, config, cross-module dependencies.
 - `gemini` — only if no Stitch scaffolding exists and you need multimodal UI generation. Rare.
-- `opencode` — general purpose coding with opencode CLI (can be used for any story type).
 
 **Override routing:**
 
@@ -304,7 +302,7 @@ The orchestrator picks the right agent for each phase. Stories carry an `agent_h
 
 # Environment variable overrides
 BMADDER_PLAN_AGENT=claude   # Plan phase (default: claude)
-BMADDER_DEV_AGENT=claude    # Dev phase (default: claude)
+BMADDER_DEV_AGENT=codex     # Dev phase (default: codex)
 BMADDER_QA_AGENT=claude     # QA phase (default: claude, uses opus)
 BMADDER_AGENT=claude        # Force ALL phases
 ```
@@ -395,7 +393,7 @@ See `templates/story-template.md` for a blank story you can copy.
 | `BMADDER_MAX_ITER` | 10 | Max dev iterations per story |
 | `BMADDER_STORY_TIMEOUT` | 1800 | Max seconds per agent invocation |
 | `BMADDER_PLAN_AGENT` | claude | Plan phase agent |
-| `BMADDER_DEV_AGENT` | claude | Dev phase default agent |
+| `BMADDER_DEV_AGENT` | codex | Dev phase default agent |
 | `BMADDER_QA_AGENT` | claude | QA phase agent (uses opus model) |
 
 ## Auth & Billing

@@ -28,8 +28,7 @@
 #   --max-dev-iter N    Max Dev↔QA loops per story (default: 10)
 #   --dry-run           Show what would run without executing
 #   --skip-po           Skip PO gate (rapid prototyping only)
-#   --skip-plan         Skip auto-plan bootstrap even if no stories exist
-#   --agent AGENT       Force ALL phases to use this agent (claude|codex|gemini|opencode)
+#   --agent AGENT       Force ALL phases to use this agent
 #   --no-commit         Skip git commit after each story QA pass
 #   --timeout SECS      Max seconds per agent invocation (default: 1800)
 #   --story ID          Process only this story (e.g., STORY-0001)
@@ -59,14 +58,13 @@ PROMPT_TMP="$BMAD_DIR/.prompt-itmp.md"
 # --- Defaults ---
 AGENT_OVERRIDE="${BMADDER_AGENT:-}"
 PLAN_AGENT="${BMADDER_PLAN_AGENT:-claude}"
-DEV_AGENT="${BMADDER_DEV_AGENT:-claude}"
+DEV_AGENT="${BMADDER_DEV_AGENT:-codex}"
 QA_AGENT="${BMADDER_QA_AGENT:-claude}"
 MAX_SM_ITER="${BMADDER_MAX_SM_ITER:-5}"
 MAX_DEV_ITER="${BMADDER_MAX_DEV_ITER:-10}"
 STORY_TIMEOUT="${BMADDER_STORY_TIMEOUT:-1800}"
 DRY_RUN=false
 SKIP_PO=false
-SKIP_PLAN=false
 NO_COMMIT=false
 FROM_EXISTING=false
 TARGET_STORY=""
@@ -80,7 +78,6 @@ while [[ $# -gt 0 ]]; do
         --max-dev-iter)  MAX_DEV_ITER="$2"; shift 2 ;;
         --dry-run)       DRY_RUN=true;      shift ;;
         --skip-po)       SKIP_PO=true;      shift ;;
-        --skip-plan)     SKIP_PLAN=true;    shift ;;
         --agent)         AGENT_OVERRIDE="$2"; shift 2 ;;
         --no-commit)     NO_COMMIT=true;    shift ;;
         --timeout)       STORY_TIMEOUT="$2"; shift 2 ;;
@@ -176,9 +173,6 @@ agent_model_flags() {
         claude)
             echo "--model sonnet"  # sonnet for all phases (plan, qa) — avoids opus limits
             ;;
-        opencode)
-            # opencode doesn't need model flags in this context
-            echo "" ;;
         *) echo "" ;;
     esac
 }
@@ -196,32 +190,34 @@ write_prompt() {
 run_agent() {
     local prompt_file="$1"
     local phase="${2:-dev}"
-    
+
     if $DRY_RUN; then
         info "[DRY RUN] $AGENT ($phase phase)"
         info "Prompt preview: $(head -3 "$prompt_file")..."
         return 0
     fi
-    
+
     local model_flags
     model_flags=$(agent_model_flags "$AGENT" "$phase")
     info "  → $AGENT $model_flags (fresh context)"
-    
+
     local rc=0
     case "$AGENT" in
         claude)  timeout "$STORY_TIMEOUT" claude --dangerously-skip-permissions $model_flags -p "$(cat "$prompt_file")" < /dev/null || rc=$? ;;
         codex)
             local tty_settings=""
             tty_settings=$(stty -g 2>/dev/null) || true
-            timeout "$STORY_TIMEOUT" codex exec --full-auto "$(cat "$prompt_file")" < /dev/null || rc=$?
+            # Pass prompt via stdin ("-" arg) — avoids shell ARG_MAX limits for long prompts.
+            # --dangerously-bypass-approvals-and-sandbox: needed so codex can run build/test
+            # commands (cargo build, cargo test, etc.) without approval prompts in CI-style use.
+            timeout "$STORY_TIMEOUT" codex exec --dangerously-bypass-approvals-and-sandbox - < "$prompt_file" || rc=$?
             [[ -n "$tty_settings" ]] && stty "$tty_settings" 2>/dev/null || true
             stty sane 2>/dev/null || true
             ;;
         gemini)  timeout "$STORY_TIMEOUT" gemini --yolo -p "$(cat "$prompt_file")" < /dev/null || rc=$? ;;
-        opencode)  timeout "$STORY_TIMEOUT" opencode $model_flags -p "$(cat "$prompt_file")" < /dev/null || rc=$? ;;
         *)       err "Unknown agent: $AGENT"; exit 1 ;;
     esac
-    
+
     if [[ $rc -eq 124 ]]; then
         warn "  Agent killed by timeout (${STORY_TIMEOUT}s)"
     elif [[ $rc -ne 0 ]]; then
@@ -699,32 +695,31 @@ commit_story() {
     fi
 }
 
+
 # ============================================================================
-# DISCOVERY: What stories need to be processed?
+# DISCOVERY: In-flight stories to resume at pipeline start
 # ============================================================================
 
 discover_stories() {
-    # Returns a sorted list of story files to process (in dependency/numeric order)
     local -a result=()
 
     if $FROM_EXISTING; then
-        # Only process stories already in READY_FOR_DEV or REFIX
         while IFS= read -r l; do [[ -n "$l" ]] && result+=("$l"); done < <(
             { get_stories_by_status "READY_FOR_DEV"; get_stories_by_status "REFIX"; } | sort
         )
     else
-        # Process ALL stories: DRAFT → SM/PO, REVISE → SM/PO, READY_FOR_DEV → Dev/QA, REFIX → Dev/QA
         while IFS= read -r l; do [[ -n "$l" ]] && result+=("$l"); done < <(
             {
                 get_stories_by_status "DRAFT"
                 get_stories_by_status "REVISE"
                 get_stories_by_status "READY_FOR_DEV"
                 get_stories_by_status "REFIX"
+                get_stories_by_status "IN_DEV"
+                get_stories_by_status "PENDING_QA"
             } | sort
         )
     fi
 
-    # Apply --start-from filter
     if [[ -n "$START_FROM" ]]; then
         local -a filtered=()
         local reached=false
@@ -740,158 +735,261 @@ discover_stories() {
 }
 
 # ============================================================================
-# THE MAIN ITERATIVE PIPELINE
+# SM: Create the NEXT single story from the PRD
+#
+# Echoes the path to the newly created story file.
+# Returns 0 if a story was created, 1 if PRD is fully implemented / stalled.
+# ============================================================================
+
+sm_create_next_story() {
+    AGENT=$(resolve_agent "plan")
+    mkdir -p "$STORIES_DIR"
+    local before_files
+    before_files=$(find "$STORIES_DIR" -name 'story-*.md' 2>/dev/null | sort)
+
+    phase "  [SM] Creating next story [$AGENT sonnet]"
+    log_activity "SM_NEXT" "-" "SM_NEXT_START" "Creating next story via $AGENT"
+
+    local today; today=$(date +%Y-%m-%d)
+    local pf prompt_body
+    prompt_body="You are the Scrum Master. Your governing contract is @_bmad/orchestrator-master.md
+
+Read the full product spec and architecture:
+@docs/prd.md
+@docs/architecture.md
+
+Check what has already been built:
+@_bmad/progress.txt
+
+Also run: \`git log --oneline -30\`
+And review existing stories in: docs/backlog/stories/
+
+Your task -- pick exactly ONE:
+
+A) If the PRD has features NOT yet implemented (no story file and not in progress.txt):
+   -> Create ONE story file for the next unimplemented feature.
+   -> Respect dependencies: foundational/infrastructure stories first.
+   -> Filename: docs/backlog/stories/story-NNNN-<slug>.md
+      (NNNN = next available 4-digit number)
+   -> Frontmatter (between --- markers):
+       story_id: \"STORY-NNNN\"
+       epic_id: \"EPIC-XXXX\"
+       title: \"<concise title>\"
+       status: \"DRAFT\"
+       priority: \"MUST_HAVE\"
+       agent_hint: \"codex\"
+       assigned_dev: null
+       po_alignment: \"PENDING\"
+       qa_status: \"NOT_STARTED\"
+       created_at: \"$today\"
+       updated_at: \"$today\"
+       links: []
+   -> Sections with full content:
+       ## Context          (why this story, what it enables, dependencies)
+       ## Requirements     (numbered, specific)
+       ## Acceptance Criteria  (numbered, testable)
+       ## Implementation Notes (architecture guidance, files to touch)
+       ## PO Alignment     (leave empty)
+       ## QA Notes         (leave empty)
+   -> Log to _bmad/logs/activity.log: \"SM_NEXT: created STORY-NNNN -- <title>\"
+
+B) If the PRD is FULLY implemented:
+   -> Append this exact line to _bmad/progress.txt:
+       \"ALL_DONE: PRD fully implemented.\"
+   -> Do NOT create any story file.
+
+Create ONLY ONE story file. Do not implement code."
+
+    pf=$(write_prompt < <(echo "$prompt_body"))
+    run_agent "$pf" "plan" || true
+
+    # Detect newly created story file by diffing before/after
+    local after_files new_story=""
+    after_files=$(find "$STORIES_DIR" -name 'story-*.md' 2>/dev/null | sort)
+    while IFS= read -r f; do
+        if [[ -n "$f" ]] && ! echo "$before_files" | grep -qF "$f" 2>/dev/null; then
+            new_story="$f"
+            break
+        fi
+    done <<< "$after_files"
+
+    if [[ -n "$new_story" && -f "$new_story" ]]; then
+        local sid; sid=$(get_story_field "$new_story" "story_id")
+        ok "  SM created: $sid -- $(get_story_field "$new_story" "title")"
+        log_activity "SM_NEXT" "$sid" "SM_NEXT_DONE" "Story created"
+        # Write path to result file — avoids stdout capture bug in command substitution
+        echo "$new_story" > "$BMAD_DIR/.sm_next_result"
+        return 0
+    fi
+
+    if grep -q "ALL_DONE" "$PROGRESS_FILE" 2>/dev/null; then
+        ok "  SM: PRD fully implemented -- pipeline complete."
+        log_activity "SM_NEXT" "-" "ALL_DONE" "PRD complete"
+        rm -f "$BMAD_DIR/.sm_next_result"
+        return 1
+    fi
+
+    warn "  SM did not create a story (stalled or PRD complete)"
+    log_activity "SM_NEXT" "-" "SM_NEXT_NONE" "No story created"
+    rm -f "$BMAD_DIR/.sm_next_result"
+    return 1
+}
+
+# ============================================================================
+# Process one story: SM/PO approval then Dev/QA implementation
+# ============================================================================
+
+process_one_story() {
+    local story_file="$1"
+    local story_id current_status
+    story_id=$(get_story_field "$story_file" "story_id")
+    current_status=$(get_story_field "$story_file" "status")
+
+    info "Current status: $current_status"
+
+    # Phase 1: SM/PO approval loop (for DRAFT or REVISE stories)
+    if [[ "$current_status" == "DRAFT" || "$current_status" == "REVISE" ]]; then
+        phase "Phase 1 of 2: SM/PO Story Approval"
+        if ! run_smpo_loop "$story_file"; then
+            warn "SM/PO loop failed for $story_id -- skipping"
+            log_activity "ORCH" "$story_id" "STORY_SKIP" "SM/PO stalled"
+            return 1
+        fi
+        current_status=$(get_story_field "$story_file" "status")
+    fi
+
+    # Phase 2: Dev/QA implementation loop
+    if [[ "$current_status" == "READY_FOR_DEV" || "$current_status" == "REFIX" \
+       || "$current_status" == "IN_DEV" || "$current_status" == "PENDING_QA" ]]; then
+        phase "Phase 2 of 2: Dev/QA Implementation"
+        if ! run_devqa_loop "$story_file"; then
+            warn "Dev/QA loop failed for $story_id -- skipping"
+            log_activity "ORCH" "$story_id" "STORY_SKIP" "Dev/QA stalled"
+            return 1
+        fi
+        commit_story "$story_file"
+        echo ""
+        ok "STORY $story_id COMPLETE -- MVP has a new working increment!"
+        log_activity "ORCH" "$story_id" "STORY_COMPLETE" "Committed"
+        log_progress "$story_id: COMPLETE"
+        return 0
+
+    elif [[ "$current_status" == "COMPLETED" ]]; then
+        info "  Already COMPLETED -- skipping."
+        return 0
+
+    else
+        warn "  Unexpected status '$current_status' for $story_id -- skipping."
+        return 1
+    fi
+}
+
+# ============================================================================
+# MAIN ITERATIVE PIPELINE
+#
+# True iterative flow per iteration:
+#   SM creates next story -> PO approves -> Dev implements -> QA checks -> commit
+#   Repeat until SM declares PRD fully implemented.
 # ============================================================================
 
 run_iterative() {
     echo ""
-    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║  BMADder Iterative Pipeline                               ║${NC}"
-    echo -e "${CYAN}║  Story-by-Story: SM↔PO approval → Dev↔QA approval        ║${NC}"
-    echo -e "${CYAN}║  Each story = a working, deployable MVP increment         ║${NC}"
-    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${CYAN}+-----------------------------------------------------------+${NC}"
+    echo -e "${CYAN}|  BMADder Iterative Pipeline                               |${NC}"
+    echo -e "${CYAN}|  SM creates -> PO approves -> Dev builds -> QA checks     |${NC}"
+    echo -e "${CYAN}|  One story at a time. Each = a deployable MVP increment.  |${NC}"
+    echo -e "${CYAN}+-----------------------------------------------------------+${NC}"
     echo ""
 
     [[ -f "$ROOT/docs/prd.md" ]]         || { err "docs/prd.md missing.";         exit 1; }
     [[ -f "$ROOT/docs/architecture.md" ]] || { err "docs/architecture.md missing."; exit 1; }
 
-    # ── Auto-plan bootstrap ────────────────────────────────────────────────
-    # If no story files exist at all, invoke bmadder.sh plan --skip-po so the
-    # SM agent creates DRAFT stubs from the PRD. The iterative SM↔PO loop
-    # below then fleshes each story out one at a time.
-    if ! $SKIP_PLAN && ! $FROM_EXISTING; then
-        local story_count
-        story_count=$(find "$STORIES_DIR" -name 'story-*.md' 2>/dev/null | wc -l | tr -d ' ')
-        if [[ "$story_count" -eq 0 ]]; then
-            info "No story files found. Running SM plan to create stubs..."
-            local plan_script="$ROOT/scripts/bmadder.sh"
-            [[ -f "$plan_script" ]] || { err "scripts/bmadder.sh not found."; exit 1; }
-            local plan_flags="plan --skip-po"
-            $DRY_RUN   && plan_flags="$plan_flags --dry-run"
-            $SKIP_PO   && plan_flags="$plan_flags --skip-po"  # already set, harmless
-            [[ -n "$AGENT_OVERRIDE" ]] && plan_flags="$plan_flags --agent $AGENT_OVERRIDE"
-            bash "$plan_script" $plan_flags
-            info "SM plan complete. Continuing iterative pipeline..."
-        fi
-    fi
-
-    # Clean worktree before pipeline
+    # Clean worktree before pipeline starts
     if ! git diff --quiet HEAD 2>/dev/null || [ -n "$(git ls-files --others --exclude-standard)" ]; then
         info "Committing uncommitted files before pipeline..."
         git add -A && git commit -m "chore: pre-iterative worktree snapshot" || true
     fi
 
-    local -a stories=()
-    while IFS= read -r l; do [[ -n "$l" ]] && stories+=("$l"); done < <(discover_stories)
+    local completed=0 stalled=0
 
-    if [[ ${#stories[@]} -eq 0 ]]; then
-        warn "No stories found to process."
-        info "Tip: Create DRAFT stories in $STORIES_DIR, or use --from-existing"
-        info "     to process READY_FOR_DEV/REFIX stories."
-        return 0
+    # Step 1: Resume any already-existing in-flight stories first
+    local -a inflight=()
+    while IFS= read -r l; do [[ -n "$l" ]] && inflight+=("$l"); done < <(discover_stories)
+
+    if [[ ${#inflight[@]} -gt 0 ]]; then
+        info "Resuming ${#inflight[@]} in-flight story/stories before starting new ones..."
+        for story_file in "${inflight[@]}"; do
+            [[ -f "$story_file" ]] || continue
+            local sid; sid=$(get_story_field "$story_file" "story_id")
+            local ttl; ttl=$(get_story_field "$story_file" "title")
+            story_banner "RESUMING -- $sid: $ttl"
+            if process_one_story "$story_file"; then
+                ((completed++)) || true
+            else
+                ((stalled++)) || true
+            fi
+        done
     fi
 
-    info "${#stories[@]} stories queued for iterative pipeline."
-    log_activity "ORCH" "-" "ITERATIVE_START" "${#stories[@]} stories"
+    # Step 2: True iterative loop -- SM creates one story at a time
+    if ! $FROM_EXISTING; then
+        local max_stories=100
+        local iterations=0
+        log_activity "ORCH" "-" "ITERATIVE_START" "Entering SM-driven loop"
 
-    local completed=0 skipped=0 stalled=0
-    local story_num=0 total=${#stories[@]}
-
-    for story_file in "${stories[@]}"; do
-        [[ -f "$story_file" ]] || continue
-        ((story_num++)) || true
-
-        local story_id title current_status
-        story_id=$(get_story_field "$story_file" "story_id")
-        title=$(get_story_field "$story_file" "title")
-        current_status=$(get_story_field "$story_file" "status")
-
-        story_banner "STORY $story_num/$total — $story_id: $title"
-        info "Current status: $current_status"
-
-        # ── Phase 1: SM↔PO approval loop ───────────────────────────────────
-        if [[ "$current_status" == "DRAFT" || "$current_status" == "REVISE" ]]; then
-            phase "Phase 1 of 2: SM↔PO Story Approval"
-
-            if ! run_smpo_loop "$story_file"; then
-                warn "SM↔PO loop failed for $story_id — skipping to next story"
-                log_activity "ORCH" "$story_id" "STORY_SKIP" "SM↔PO stalled"
-                ((stalled++)) || true
-                continue
-            fi
-
-            # Refresh status after SM↔PO
-            current_status=$(get_story_field "$story_file" "status")
-        fi
-
-        # ── Phase 2: Dev↔QA implementation loop ────────────────────────────
-        if [[ "$current_status" == "READY_FOR_DEV" || "$current_status" == "REFIX" ]]; then
-            phase "Phase 2 of 2: Dev↔QA Implementation"
-
-            if ! run_devqa_loop "$story_file"; then
-                warn "Dev↔QA loop failed for $story_id — skipping to next story"
-                log_activity "ORCH" "$story_id" "STORY_SKIP" "Dev↔QA stalled"
-                ((stalled++)) || true
-                continue
-            fi
-
-            # Story is now COMPLETED — commit it
-            commit_story "$story_file"
-            ((completed++)) || true
-
+        while [[ $iterations -lt $max_stories ]]; do
+            ((iterations++)) || true
             echo ""
-            ok "✅ Story $story_id COMPLETE — MVP has a new working increment!"
-            log_activity "ORCH" "$story_id" "STORY_COMPLETE" "Committed"
-            log_progress "$story_id: COMPLETE"
+            echo -e "${MAGENTA}-- Iteration $iterations -----------------------------------------------${NC}"
 
-        elif [[ "$current_status" == "COMPLETED" ]]; then
-            info "  Already COMPLETED — skipping."
-            ((skipped++)) || true
-
-        elif [[ "$current_status" == "IN_DEV" || "$current_status" == "PENDING_QA" ]]; then
-            # Story is mid-flight — pick up where we left off
-            warn "  Story is mid-flight (status=$current_status) — resuming Dev↔QA loop"
-            if ! run_devqa_loop "$story_file"; then
-                warn "Dev↔QA loop failed for $story_id — skipping to next story"
-                ((stalled++)) || true
-                continue
+            # SM creates the next story — writes path to .sm_next_result (no subshell capture)
+            rm -f "$BMAD_DIR/.sm_next_result"
+            if ! sm_create_next_story; then
+                ok "SM signals PRD is fully implemented. Pipeline complete."
+                break
             fi
-            commit_story "$story_file"
-            ((completed++)) || true
-            ok "✅ Story $story_id COMPLETE"
-            log_progress "$story_id: COMPLETE (resumed)"
-        else
-            warn "  Unexpected status '$current_status' for $story_id — skipping."
-            ((skipped++)) || true
-        fi
-    done
 
-    # ── Final Report ──────────────────────────────────────────────────────
+            local new_story=""
+            [[ -f "$BMAD_DIR/.sm_next_result" ]] && new_story=$(cat "$BMAD_DIR/.sm_next_result")
+            [[ -z "$new_story" || ! -f "$new_story" ]] && {
+                warn "SM returned no story path -- stopping."
+                break
+            }
+
+            local sid; sid=$(get_story_field "$new_story" "story_id")
+            local ttl; ttl=$(get_story_field "$new_story" "title")
+            story_banner "NEW STORY -- $sid: $ttl"
+
+            if process_one_story "$new_story"; then
+                ((completed++)) || true
+            else
+                ((stalled++)) || true
+                warn "Story $sid stalled. Continuing to next story..."
+            fi
+        done
+
+        [[ $iterations -ge $max_stories ]] && \
+            warn "Safety limit ($max_stories stories) reached. Re-run to continue."
+    fi
+
+    # Final report
     echo ""
-    echo -e "${CYAN}╔═══════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${CYAN}║  Iterative Pipeline Complete                              ║${NC}"
-    echo -e "${CYAN}╚═══════════════════════════════════════════════════════════╝${NC}"
+    echo -e "${CYAN}+-----------------------------------------------------------+${NC}"
+    echo -e "${CYAN}|  Iterative Pipeline Complete                              |${NC}"
+    echo -e "${CYAN}+-----------------------------------------------------------+${NC}"
     echo ""
     echo -e "  ${GREEN}Completed this run:${NC}  $completed"
-    echo -e "  ${YELLOW}Already done:${NC}        $skipped"
     echo -e "  ${RED}Stalled:${NC}             $stalled"
     echo ""
 
-    # Overall story counts
     local total_done; total_done=$(get_stories_by_status "COMPLETED" | wc -l | tr -d ' ')
-    local total_all=0
-    for s in DRAFT REVISE READY_FOR_DEV IN_DEV PENDING_QA REFIX COMPLETED; do
-        local c; c=$(get_stories_by_status "$s" | wc -l | tr -d ' ')
-        ((total_all += c)) || true
-    done
-
-    if [[ $total_done -eq $total_all && $total_all -gt 0 ]]; then
-        echo -e "${GREEN}  🎉 ALL $total_all STORIES COMPLETED — MVP is fully built!${NC}"
-        log_activity "ORCH" "-" "ITERATIVE_DONE" "All $total_all completed"
+    if grep -q "ALL_DONE" "$PROGRESS_FILE" 2>/dev/null; then
+        echo -e "${GREEN}  PRD FULLY IMPLEMENTED -- $total_done stories completed!${NC}"
+        log_activity "ORCH" "-" "ITERATIVE_DONE" "All done"
     else
-        echo -e "${YELLOW}  $total_done / $total_all stories total have COMPLETED status${NC}"
-        [[ $stalled -gt 0 ]] && warn "  $stalled stories stalled — review logs/activity.log"
-        log_activity "ORCH" "-" "ITERATIVE_PARTIAL" "$total_done/$total_all"
+        echo -e "${YELLOW}  $total_done stories completed so far${NC}"
+        [[ $stalled -gt 0 ]] && warn "  $stalled stories stalled -- review _bmad/logs/activity.log"
+        log_activity "ORCH" "-" "ITERATIVE_PARTIAL" "$total_done completed"
     fi
     echo ""
 }
@@ -902,7 +1000,7 @@ run_iterative() {
 
 main() {
     [[ -f "$BMAD_DIR/orchestrator-master.md" ]] || {
-        err "Not a BMADder project. Run: uv run scripts/bootstrap_bmadder.py"
+        err "Not a BMADder project. Run: python3 scripts/bootstrap_bmadder.py"
         exit 1
     }
 
