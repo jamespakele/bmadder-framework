@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# bmadder.sh — BMADder Framework Orchestrator
+# bmadder.sh -- BMADder Framework Orchestrator
 # A Ralph Wiggum loop with BMAD state machine gates and role separation.
 #
 # Design:
@@ -11,14 +11,14 @@
 #     and decides what to invoke. The LLM does the work within guardrails.
 #
 # Agent routing (defaults):
-#   plan (SM + PO)   → claude (sonnet)    Structured reasoning, doc gen
-#   dev (all stories)→ codex              Long-horizon coding, build/test
-#   qa               → claude (sonnet)      Deep code review, nuanced decisions
+#   plan (SM + PO)   -> claude (sonnet)    Structured reasoning, doc gen
+#   dev (all stories)-> codex              Long-horizon coding, build/test
+#   qa               -> claude (sonnet)      Deep code review, nuanced decisions
 #
 #   Stories carry an `agent_hint` frontmatter field set during planning:
-#     agent_hint: "codex"    → backend, API, database, infra, AND frontend
-#     agent_hint: "claude"   → complex logic, config, data transforms
-#     agent_hint: "gemini"   → ONLY if no Stitch scaffolding exists (rare)
+#     agent_hint: "codex"    -> backend, API, database, infra, AND frontend
+#     agent_hint: "claude"   -> complex logic, config, data transforms
+#     agent_hint: "gemini"   -> ONLY if no Stitch scaffolding exists (rare)
 #
 #   Frontend stories use Stitch design artifacts in src/scaffolding/ as
 #   reference. Codex/Claude apply the design; they don't invent it.
@@ -27,10 +27,10 @@
 #   ./scripts/bmadder.sh [phase] [options]
 #
 # Phases:
-#   plan        SM shards PRD → stories, PO reviews all at once
+#   plan        SM shards PRD -> stories, PO reviews all at once
 #   dev         Sequential dev loop, one story at a time, fresh context
 #   qa          Sequential QA audit, one story at a time, fresh context
-#   cycle       Full pipeline: plan → dev → qa (loops back for REFIX)
+#   cycle       Full pipeline: plan -> dev -> qa (loops back for REFIX)
 #   status      Show current story states
 #   validate    Run story frontmatter validation only
 #
@@ -187,7 +187,7 @@ agent_model_flags() {
     local agent="$1" phase="$2"
     case "$agent" in
         claude)
-            # sonnet for all phases — avoids opus limits on long pipeline runs
+            # sonnet for all phases -- avoids opus limits on long pipeline runs
             echo "--model sonnet"
             ;;
         *) echo "" ;;  # codex and gemini don't need model flags
@@ -220,7 +220,7 @@ run_agent() {
 
     local model_flags
     model_flags=$(agent_model_flags "$AGENT" "$phase")
-    info "→ $AGENT $model_flags (fresh context)"
+    info "-> $AGENT $model_flags (fresh context)"
 
     # < /dev/null prevents claude/gemini from blocking on stdin after completion
     # codex uses `exec` mode for non-interactive, auto-exit behavior (no TUI).
@@ -236,7 +236,7 @@ run_agent() {
             local tty_settings=""
             tty_settings=$(stty -g 2>/dev/null) || true
             timeout "$STORY_TIMEOUT" codex exec --full-auto "$(cat "$prompt_file")" < /dev/null || rc=$?
-            # Restore TTY — codex can leave terminal in raw mode
+            # Restore TTY -- codex can leave terminal in raw mode
             [[ -n "$tty_settings" ]] && stty "$tty_settings" 2>/dev/null || true
             stty sane 2>/dev/null || true
             ;;
@@ -259,7 +259,7 @@ run_agent() {
     elif $rate_limited; then
         warn "Gemini rate-limited (429). Backing off ${_GEMINI_BACKOFF}s before next iteration..."
         sleep "$_GEMINI_BACKOFF"
-        # Exponential backoff — cap at 300s (5 min)
+        # Exponential backoff -- cap at 300s (5 min)
         _GEMINI_BACKOFF=$(( _GEMINI_BACKOFF * 2 ))
         [[ $_GEMINI_BACKOFF -gt 300 ]] && _GEMINI_BACKOFF=300
         return 1  # signal caller to retry
@@ -305,9 +305,9 @@ validate_stories() {
 
 show_status() {
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}===================================================${NC}"
     echo -e "${CYAN}  BMADder Status${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}===================================================${NC}"
     echo ""
     for s in DRAFT REVISE READY_FOR_DEV IN_DEV PENDING_QA REFIX COMPLETED; do
         local c; c=$(count_by_status "$s")
@@ -322,29 +322,29 @@ show_status() {
     echo -e "\n  Total: $(count_all)"
     echo ""
     echo -e "${CYAN}  Key Files:${NC}"
-    [[ -f "$ROOT/docs/prd.md" ]]              && echo -e "  ${GREEN}✓${NC} docs/prd.md"                || echo -e "  ${RED}✗${NC} docs/prd.md"
-    [[ -f "$ROOT/docs/architecture.md" ]]      && echo -e "  ${GREEN}✓${NC} docs/architecture.md"        || echo -e "  ${RED}✗${NC} docs/architecture.md"
-    [[ -f "$BMAD_DIR/orchestrator-master.md" ]] && echo -e "  ${GREEN}✓${NC} _bmad/orchestrator-master.md" || echo -e "  ${RED}✗${NC} _bmad/orchestrator-master.md"
-    [[ -f "$PROGRESS_FILE" ]]                  && echo -e "  ${GREEN}✓${NC} _bmad/progress.txt"           || echo -e "  ${YELLOW}-${NC} _bmad/progress.txt"
+    [[ -f "$ROOT/docs/prd.md" ]]              && echo -e "  ${GREEN}[OK]${NC} docs/prd.md"                || echo -e "  ${RED}[X]${NC} docs/prd.md"
+    [[ -f "$ROOT/docs/architecture.md" ]]      && echo -e "  ${GREEN}[OK]${NC} docs/architecture.md"        || echo -e "  ${RED}[X]${NC} docs/architecture.md"
+    [[ -f "$BMAD_DIR/orchestrator-master.md" ]] && echo -e "  ${GREEN}[OK]${NC} _bmad/orchestrator-master.md" || echo -e "  ${RED}[X]${NC} _bmad/orchestrator-master.md"
+    [[ -f "$PROGRESS_FILE" ]]                  && echo -e "  ${GREEN}[OK]${NC} _bmad/progress.txt"           || echo -e "  ${YELLOW}-${NC} _bmad/progress.txt"
     echo ""
     echo -e "${CYAN}  Agent Routing:${NC}"
-    echo -e "  plan → ${PLAN_AGENT} (sonnet)    dev → ${DEV_AGENT}    qa → ${QA_AGENT} (sonnet)"
-    [[ -n "$AGENT_OVERRIDE" ]] && echo -e "  ${YELLOW}⚠ Global override: $AGENT_OVERRIDE${NC}"
+    echo -e "  plan -> ${PLAN_AGENT} (sonnet)    dev -> ${DEV_AGENT}    qa -> ${QA_AGENT} (sonnet)"
+    [[ -n "$AGENT_OVERRIDE" ]] && echo -e "  ${YELLOW}[!] Global override: $AGENT_OVERRIDE${NC}"
     echo ""
 }
 
 # ============================================================================
 # PHASE: PLAN
 # Two sequential invocations, both use Claude Sonnet:
-#   1. SM: reads PRD + arch → creates story files
-#   2. PO: reads ALL drafts at once → approves or revises
+#   1. SM: reads PRD + arch -> creates story files
+#   2. PO: reads ALL drafts at once -> approves or revises
 # ============================================================================
 
 run_plan() {
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}  Phase: PLAN (SM → Stories → PO Gate)${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}===================================================${NC}"
+    echo -e "${CYAN}  Phase: PLAN (SM -> Stories -> PO Gate)${NC}"
+    echo -e "${CYAN}===================================================${NC}"
     echo ""
 
     [[ -f "$ROOT/docs/prd.md" ]]         || { err "docs/prd.md missing."; exit 1; }
@@ -376,12 +376,12 @@ Pre-check:
 BEFORE creating any stories, list all existing files in docs/backlog/stories/.
 If stories already exist, READ their frontmatter to understand what has been created.
 Do NOT recreate stories that already exist. Only create MISSING stories.
-SKIP stories with status: "READY_FOR_DEV" or "COMPLETED" — they are already approved.
+SKIP stories with status: "READY_FOR_DEV" or "COMPLETED" -- they are already approved.
 Only work on stories with status: "REVISE" or stories that don't exist yet.
 
 Revision handling:
 Check for stories with status: "REVISE". For EACH revise story:
-1. Read the ## PO Alignment section — it contains the PO's revision notes.
+1. Read the ## PO Alignment section -- it contains the PO's revision notes.
 2. Address EVERY issue the PO raised (unclear criteria, scope too large, missing deps, etc.).
 3. Update the story content to fix the issues.
 4. Set status: "DRAFT" and po_alignment: "PENDING" so the PO can re-review.
@@ -395,7 +395,7 @@ If relevant mockups exist, reference them in the story's ## Context or ## Implem
 so the dev agent knows which mockup to follow. Example:
   "See docs/ui-mockups/stitch/kip_login_screen_corporate_b_w_style/ for reference mockup."
 
-Task (for new stories only — skip if all PRD requirements are already covered):
+Task (for new stories only -- skip if all PRD requirements are already covered):
 1. Decompose the PRD into atomic, implementable user stories.
 2. Create each as docs/backlog/stories/story-NNNN-slug.md using the exact
    YAML frontmatter from orchestrator-master.md:
@@ -403,12 +403,12 @@ Task (for new stories only — skip if all PRD requirements are already covered)
    - po_alignment: "PENDING"
 3. Each story MUST have sections: Context, Requirements, Acceptance Criteria,
    Implementation Notes, PO Alignment, QA Notes.
-4. Order by dependency: infra → core → secondary. NNNN numbering = priority.
+4. Order by dependency: infra -> core -> secondary. NNNN numbering = priority.
 5. Keep stories atomic: single responsibility, testable, one focused effort.
 6. Group under epics in docs/backlog/epics/ if logical.
 7. Set the `agent_hint` frontmatter field for each story:
-   - agent_hint: "codex"   → backend, API, database, infrastructure, AND frontend
-   - agent_hint: "claude"  → complex logic, data transforms, config
+   - agent_hint: "codex"   -> backend, API, database, infrastructure, AND frontend
+   - agent_hint: "claude"  -> complex logic, data transforms, config
    Default to "codex" for ALL stories including frontend.
    Frontend stories reference design templates in src/scaffolding/ (from Stitch)
    and UI mockups in docs/ui-mockups/stitch/ (from Google Stitch).
@@ -493,9 +493,9 @@ EOF
 
 run_dev() {
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}===================================================${NC}"
     echo -e "${CYAN}  Phase: DEV (Sequential, Fresh Context per Story)${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}===================================================${NC}"
     echo ""
 
     # Clean worktree before dev loop to prevent agent stdin prompts
@@ -526,7 +526,7 @@ run_dev() {
         local hint; hint=$(get_story_field "$story_file" "agent_hint" 2>/dev/null || echo "default")
 
         echo ""
-        echo -e "${CYAN}━━━ $story_id: $title [$AGENT / $hint] ━━━${NC}"
+        echo -e "${CYAN}--- $story_id: $title [$AGENT / $hint] ---${NC}"
 
         # Reset gemini backoff at start of each story
         _GEMINI_BACKOFF=30
@@ -555,9 +555,9 @@ Also run: \`git log --oneline -20\` to see what previous iterations built.
 
 Design reference (for frontend stories):
 If src/scaffolding/ exists, READ these before writing any UI code:
-- src/scaffolding/tokens.md — design tokens (colors, fonts, spacing)
-- src/scaffolding/layouts/ — page layout templates
-- src/scaffolding/components/ — reusable UI component templates
+- src/scaffolding/tokens.md -- design tokens (colors, fonts, spacing)
+- src/scaffolding/layouts/ -- page layout templates
+- src/scaffolding/components/ -- reusable UI component templates
 Match the design language exactly. Do NOT invent new styles.
 
 Task:
@@ -565,7 +565,7 @@ Task:
 2. Write FAILING unit tests FIRST for each acceptance criterion (TDD).
 3. Implement under src/ following architecture.md until tests pass.
    For frontend: reference src/scaffolding/ templates, build pages in src/app/ or src/pages/.
-4. Run ALL feedback loops — fix before continuing:
+4. Run ALL feedback loops -- fix before continuing:
    - Build: \`cargo build\` (or project build cmd)
    - Test:  \`cargo test\`  (or project test cmd)
    - Lint:  \`cargo clippy\` (or project lint cmd)
@@ -586,16 +586,16 @@ PROMPT_EOF
 
             run_agent "$pf" "dev" || true
 
-            # Bash checks status on disk — not trusting agent output
+            # Bash checks status on disk -- not trusting agent output
             local st; st=$(get_story_field "$story_file" "status")
             if [[ "$st" == "PENDING_QA" ]]; then
-                ok "  $story_id → PENDING_QA (iteration $iter)"
+                ok "  $story_id -> PENDING_QA (iteration $iter)"
                 log_activity "DEV" "$story_id" "DEV_DONE" "$iter iterations via $AGENT"
                 log_progress "$story_id: DEV done, $iter iters, $AGENT"
                 break
             fi
             info "  $story_id still IN_DEV. Continuing..."
-            log_progress "$story_id: iter $iter — in progress ($AGENT)"
+            log_progress "$story_id: iter $iter -- in progress ($AGENT)"
 
             # Inter-iteration delay for gemini to respect quota
             # Skipped on last iteration to avoid pointless wait before stall check
@@ -626,9 +626,9 @@ PROMPT_EOF
 
 run_qa() {
     echo ""
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}===================================================${NC}"
     echo -e "${CYAN}  Phase: QA (Sequential, Claude Opus)${NC}"
-    echo -e "${CYAN}═══════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}===================================================${NC}"
     echo ""
 
     local stories=()
@@ -648,7 +648,7 @@ run_qa() {
 
         AGENT=$(resolve_agent "qa" "$story_file")
         echo ""
-        info "QA: $story_id — $title [$AGENT sonnet]"
+        info "QA: $story_id -- $title [$AGENT sonnet]"
         log_activity "ORCH" "$story_id" "QA_START" "QA via $AGENT sonnet"
 
         local pf
@@ -706,7 +706,7 @@ PROMPT_EOF
             fi
 
         elif [[ "$ns" == "REFIX" ]]; then
-            warn "  $story_id: QA FAIL → REFIX"
+            warn "  $story_id: QA FAIL -> REFIX"
             log_activity "QA" "$story_id" "QA_FAIL" "Needs refix"
             log_progress "$story_id: QA FAIL"
 
@@ -721,14 +721,14 @@ PROMPT_EOF
 
 # ============================================================================
 # PHASE: CYCLE
-# Full pipeline. plan → dev → qa. REFIX loops back to dev.
+# Full pipeline. plan -> dev -> qa. REFIX loops back to dev.
 # ============================================================================
 
 run_cycle() {
     echo ""
-    echo -e "${CYAN}═════════════════════════════════════════════════════════${NC}"
-    echo -e "${CYAN}  BMADder Cycle: PLAN → DEV → QA${NC}"
-    echo -e "${CYAN}═════════════════════════════════════════════════════════${NC}"
+    echo -e "${CYAN}=========================================================${NC}"
+    echo -e "${CYAN}  BMADder Cycle: PLAN -> DEV -> QA${NC}"
+    echo -e "${CYAN}=========================================================${NC}"
     echo ""
     log_activity "ORCH" "-" "CYCLE_START" "Full cycle"
 
@@ -739,7 +739,7 @@ run_cycle() {
     local revise; revise=$(count_by_status "REVISE")
     if [[ $ready -eq 0 && $refix -eq 0 ]]; then
         if [[ $drafts -gt 0 && $revise -eq 0 ]]; then
-            # DRAFTs exist, no revisions needed — skip SM, run PO only
+            # DRAFTs exist, no revisions needed -- skip SM, run PO only
             info "$drafts DRAFT stories exist. Skipping SM, running PO review..."
             SKIP_SM=true
         elif [[ $revise -gt 0 ]]; then
@@ -749,12 +749,12 @@ run_cycle() {
         run_plan
     fi
 
-    # Dev → QA with REFIX loop
+    # Dev -> QA with REFIX loop
     local pass=0 max_passes=3
     while [[ $pass -lt $max_passes ]]; do
         ((pass++)) || true
         echo ""
-        info "═══ Dev/QA pass $pass/$max_passes ═══"
+        info "=== Dev/QA pass $pass/$max_passes ==="
         run_dev
         run_qa
 
@@ -772,14 +772,14 @@ run_cycle() {
 
     echo ""
     if [[ $done_count -eq $total && $total -gt 0 ]]; then
-        echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
+        echo -e "${GREEN}===================================================${NC}"
         echo -e "${GREEN}  ALL $total STORIES COMPLETED${NC}"
-        echo -e "${GREEN}═══════════════════════════════════════════════════${NC}"
+        echo -e "${GREEN}===================================================${NC}"
         log_activity "ORCH" "-" "CYCLE_DONE" "All $total done"
     else
-        echo -e "${YELLOW}═══════════════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}===================================================${NC}"
         echo -e "${YELLOW}  $done_count/$total completed${NC}"
-        echo -e "${YELLOW}═══════════════════════════════════════════════════${NC}"
+        echo -e "${YELLOW}===================================================${NC}"
         local stalled; stalled=$(count_by_status "REFIX")
         local stuck; stuck=$(count_by_status "IN_DEV")
         [[ $stalled -gt 0 ]] && warn "  $stalled REFIX"
@@ -837,19 +837,19 @@ preflight() {
             case "$a" in
                 claude)
                     [[ -n "${ANTHROPIC_API_KEY:-}" ]] && {
-                        warn "ANTHROPIC_API_KEY is set — Claude will bill API instead of subscription"
+                        warn "ANTHROPIC_API_KEY is set -- Claude will bill API instead of subscription"
                         rogue=true
                     }
                     ;;
                 codex)
                     [[ -n "${OPENAI_API_KEY:-}" ]] && {
-                        warn "OPENAI_API_KEY is set — Codex will bill API instead of subscription"
+                        warn "OPENAI_API_KEY is set -- Codex will bill API instead of subscription"
                         rogue=true
                     }
                     ;;
                 gemini)
                     [[ -n "${GEMINI_API_KEY:-}${GOOGLE_API_KEY:-}" ]] && {
-                        warn "GEMINI_API_KEY or GOOGLE_API_KEY is set — Gemini will bill API instead of subscription"
+                        warn "GEMINI_API_KEY or GOOGLE_API_KEY is set -- Gemini will bill API instead of subscription"
                         rogue=true
                     }
                     ;;
