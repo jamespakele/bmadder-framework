@@ -91,7 +91,7 @@ uv run scripts/bootstrap_bmadder.py
 
 This creates:
 - `docs/` — PRD, architecture, backlog, standards
-- `.bmad/` — orchestrator contract, logs
+- `_bmad/` — orchestrator contract, logs
 - `src/` — your code will go here
 - `scripts/` — already there from the copy
 - `.mise.toml` — tool versions
@@ -150,7 +150,7 @@ See [DESIGN-GATE.md](DESIGN-GATE.md) for the full Stitch workflow.
 1. Open Google Stitch
 2. Describe your UI in natural language, referencing your PRD
 3. Export the design artifacts
-4. Create `src/scaffolding/tokens.md` from the export (use `templates/tokens-template.md`)
+4. Create `src/scaffolding/tokens.md` from the export (use `.deprecated/templates/tokens-template.md`)
 5. Place layout/component templates in `src/scaffolding/layouts/` and `src/scaffolding/components/`
 
 If you skip this step, frontend stories will still work — agents will just make their own design decisions (which may not be what you want).
@@ -212,10 +212,10 @@ In another terminal:
 ./scripts/bmadder.sh status
 
 # Watch the progress log
-tail -f .bmad/progress.txt
+tail -f _bmad/progress.txt
 
 # Watch the activity log
-tail -f .bmad/logs/activity.log
+tail -f _bmad/logs/activity.log
 ```
 
 ---
@@ -342,7 +342,7 @@ After all stories are COMPLETED:
 ### 1. Read activity.log for the full decision audit
 
 ```bash
-cat .bmad/logs/activity.log
+cat _bmad/logs/activity.log
 ```
 
 This shows every phase start/end, every QA pass/fail, every git push. It's the audit trail.
@@ -350,7 +350,7 @@ This shows every phase start/end, every QA pass/fail, every git push. It's the a
 ### 2. Read progress.txt for the development narrative
 
 ```bash
-cat .bmad/progress.txt
+cat _bmad/progress.txt
 ```
 
 This shows iteration-by-iteration progress: what each agent did, how many iterations, where things got stuck.

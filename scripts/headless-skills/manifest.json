@@ -1,0 +1,59 @@
+{
+  "generator_version": "1.0.0",
+  "generated_at": "2026-05-22T09:30:06.546356+00:00",
+  "skills": {
+    "sm-create-stories": {
+      "description": "Scrum Master: bulk story creation from PRD",
+      "output_file": "sm-create-stories.md",
+      "sources": {
+        "bmad-create-epics-and-stories/workflow.md": "4063fb5ce6209a50bf68eaaeeac015a7578f1905b3a95a9e51a8d5aa517be5b8",
+        "bmad-create-epics-and-stories/steps/step-01-validate-prerequisites.md": "5c2aabc871363d84fc2e12fd83a3889e9d752b6bd330e31a0067c96204dd4880",
+        "bmad-create-epics-and-stories/steps/step-02-design-epics.md": "44b8859c4f9e6c8275b44be1c8d36f5360b54db7c54b8d4d1b61e865b33d51d8",
+        "bmad-create-epics-and-stories/steps/step-03-create-stories.md": "c5b787a82e4e49ed9cd9c028321ee1689f32b8cd69d89eea609b37cd3d481afc",
+        "bmad-create-epics-and-stories/steps/step-04-final-validation.md": "6be228c80a97a74fe6b2dca7ded26fdbca3524a4c8590942e150f24e16da68f3",
+        "bmad-create-story/checklist.md": "b94e28e774c3be0288f04ea163424bece4ddead5cd3f3680d1603ed07383323a",
+        "bmad-create-story/template.md": "29ba697368d77e88e88d0e7ac78caf7a78785a7dcfc291082aa96a62948afb67"
+      },
+      "output_hash": "94c16df69494a6b7c9c913022dc7b2c4cb822081ae502d919eb96641a259e545"
+    },
+    "sm-create-story": {
+      "description": "Scrum Master: single story creation",
+      "output_file": "sm-create-story.md",
+      "sources": {
+        "bmad-create-story/workflow.md": "5ef89f34fe47a6f83d4dc3c3e1d29bbdea58838122549f60a6bc53046825305d",
+        "bmad-create-story/discover-inputs.md": "dfedba6a8ea05c9a91c6d202c4b29ee3ea793d8ef77575034787ae0fef280507",
+        "bmad-create-story/checklist.md": "b94e28e774c3be0288f04ea163424bece4ddead5cd3f3680d1603ed07383323a",
+        "bmad-create-story/template.md": "29ba697368d77e88e88d0e7ac78caf7a78785a7dcfc291082aa96a62948afb67"
+      },
+      "output_hash": "35a042a84373e2482dd9f5639bf4663b31996546ae6af67f8ba454118604406b"
+    },
+    "po-review": {
+      "description": "Product Owner: story quality review gate",
+      "output_file": "po-review.md",
+      "sources": {
+        "bmad-create-story/checklist.md": "b94e28e774c3be0288f04ea163424bece4ddead5cd3f3680d1603ed07383323a"
+      },
+      "output_hash": "301e6e5537c9849195b03780a9270ad137226703bf29ade1f41f98baee5e1069"
+    },
+    "dev-story": {
+      "description": "Developer: story implementation (TDD, red-green-refactor)",
+      "output_file": "dev-story.md",
+      "sources": {
+        "bmad-dev-story/workflow.md": "96109fde74e4a6743acb6d3b70f83b6ceddc48dc7dc5fbb4a7a5142ecc0fc51e"
+      },
+      "output_hash": "ddf8b8f8d60fe8fd185aed2f56002087b17b942719ae9cbb34f8de91b514ae23"
+    },
+    "qa-review": {
+      "description": "QA Auditor: code review and acceptance verification",
+      "output_file": "qa-review.md",
+      "sources": {
+        "bmad-code-review/workflow.md": "329c5b98aedf092cc1e3cd56a73a19a68edac0693ff9481abc88336852dbffd0",
+        "bmad-code-review/steps/step-01-gather-context.md": "d0ee7558605e9d48b5b6f15d9b535542eb6d922613f529bb520326eacade4171",
+        "bmad-code-review/steps/step-02-review.md": "6c0f85f7be5d1e28af1a538f4393ec4a766c4f2ae6eb3e8fb69cb64a5b0bd325",
+        "bmad-code-review/steps/step-03-triage.md": "91eaa27f6a167702ead00da9e93565c9bff79dce92c02eccbca61b1d1ed39a80",
+        "bmad-code-review/steps/step-04-present.md": "7c9a738036845c9fa9fcfaff3f3efd87123e75749877f334b781b25c9765f59c"
+      },
+      "output_hash": "d0ca1e5619b0751059574e62b08553aa3eeb990cace2d572e7986599556ce040"
+    }
+  }
+}

@@ -59,6 +59,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STORIES_DIR="$ROOT/docs/backlog/stories"
 STANDARDS_DIR="$ROOT/docs/standards"
 BMAD_DIR="$ROOT/_bmad"
+HEADLESS_DIR="$ROOT/scripts/headless-skills"
 LOG_FILE="$BMAD_DIR/logs/activity.log"
 PROGRESS_FILE="$BMAD_DIR/progress.txt"
 PROMPT_TMP="$BMAD_DIR/.prompt-tmp.md"
@@ -365,57 +366,36 @@ run_plan() {
 
         local pf
         pf=$(write_prompt <<'EOF'
-You are the Scrum Master. Your governing contract is @_bmad/orchestrator-master.md
+You are the Scrum Master running in AUTOMATED PIPELINE mode (non-interactive, no user input).
 
-Read:
+Follow the consolidated headless skill instructions:
+@scripts/headless-skills/sm-create-stories.md
+
+Context documents:
 @docs/prd.md
 @docs/architecture.md
-@docs/standards/scrum-master-guide.md
+
+Pipeline rules:
+- Stories go in: docs/backlog/stories/story-NNNN-slug.md
+- Use YAML frontmatter with: status: "DRAFT", po_alignment: "PENDING"
+- Each story MUST have sections: Context, Requirements, Acceptance Criteria,
+  Implementation Notes, PO Alignment, QA Notes.
 
 Pre-check:
-BEFORE creating any stories, list all existing files in docs/backlog/stories/.
-If stories already exist, READ their frontmatter to understand what has been created.
-Do NOT recreate stories that already exist. Only create MISSING stories.
-SKIP stories with status: "READY_FOR_DEV" or "COMPLETED" -- they are already approved.
+BEFORE creating stories, list existing files in docs/backlog/stories/.
+Do NOT recreate existing stories. SKIP stories with status: "READY_FOR_DEV" or "COMPLETED".
 Only work on stories with status: "REVISE" or stories that don't exist yet.
 
 Revision handling:
-Check for stories with status: "REVISE". For EACH revise story:
-1. Read the ## PO Alignment section -- it contains the PO's revision notes.
-2. Address EVERY issue the PO raised (unclear criteria, scope too large, missing deps, etc.).
-3. Update the story content to fix the issues.
-4. Set status: "DRAFT" and po_alignment: "PENDING" so the PO can re-review.
-5. Append a dated note under ## PO Alignment: "SM revision: [what was changed]"
+For stories with status: "REVISE":
+1. Read ## PO Alignment for revision notes.
+2. Address every issue. Update content. Set status: "DRAFT", po_alignment: "PENDING".
+3. Append dated note under ## PO Alignment.
 
-If there are no MISSING stories and no REVISE stories, log that sharding is complete and exit.
-
-UI reference:
-For UI/frontend stories, check docs/ui-mockups/ for Stitch-generated mockups.
-If relevant mockups exist, reference them in the story's ## Context or ## Implementation Notes
-so the dev agent knows which mockup to follow. Example:
-  "See docs/ui-mockups/stitch/kip_login_screen_corporate_b_w_style/ for reference mockup."
-
-Task (for new stories only -- skip if all PRD requirements are already covered):
-1. Decompose the PRD into atomic, implementable user stories.
-2. Create each as docs/backlog/stories/story-NNNN-slug.md using the exact
-   YAML frontmatter from orchestrator-master.md:
-   - status: "DRAFT"
-   - po_alignment: "PENDING"
-3. Each story MUST have sections: Context, Requirements, Acceptance Criteria,
-   Implementation Notes, PO Alignment, QA Notes.
-4. Order by dependency: infra -> core -> secondary. NNNN numbering = priority.
-5. Keep stories atomic: single responsibility, testable, one focused effort.
-6. Group under epics in docs/backlog/epics/ if logical.
-7. Set the `agent_hint` frontmatter field for each story:
-   - agent_hint: "codex"   -> backend, API, database, infrastructure, AND frontend
-   - agent_hint: "claude"  -> complex logic, data transforms, config
-   Default to "codex" for ALL stories including frontend.
-   Frontend stories reference design templates in src/scaffolding/ (from Stitch)
-   and UI mockups in docs/ui-mockups/stitch/ (from Google Stitch).
-   Do NOT use agent_hint: "gemini" unless explicitly told to.
-8. Log a summary to _bmad/logs/activity.log.
+If no MISSING or REVISE stories remain, log that sharding is complete and exit.
 
 Do NOT implement code. Do NOT approve stories.
+Log a summary to _bmad/logs/activity.log.
 EOF
         )
         run_agent "$pf" "plan"
@@ -444,27 +424,29 @@ EOF
         log_activity "ORCH" "-" "PO_START" "PO review via $AGENT"
 
         pf=$(write_prompt <<'EOF'
-You are the Product Owner. Your governing contract is @_bmad/orchestrator-master.md
+You are the Product Owner running in AUTOMATED PIPELINE mode (non-interactive, no user input).
 
-Read:
+Follow the story quality checklist:
+@scripts/headless-skills/po-review.md
+
+Context documents:
 @docs/prd.md
 @docs/architecture.md
-@docs/standards/po-alignment-checklist.md
 
 Read EVERY story in docs/backlog/stories/ with status: "DRAFT".
 
-For each draft story:
+For each draft story, evaluate against the checklist criteria above PLUS:
 1. Does it map to at least one PRD requirement?
 2. Is it consistent with the architecture?
 3. Are Requirements and Acceptance Criteria clear, specific, testable?
 4. Is scope small enough for one implementation + testing effort?
 5. Are there dependency gaps (assumes work from a missing story)?
 
-If ALL yes:
+If ALL criteria pass:
 - Set status: "READY_FOR_DEV", po_alignment: "APPROVED"
 - Append dated approval note under ## PO Alignment
 
-If ANY no:
+If ANY criterion fails:
 - Set status: "REVISE", po_alignment: "REVISE"
 - Append specific revision notes under ## PO Alignment
 
@@ -540,7 +522,10 @@ run_dev() {
 
             local pf
             pf=$(write_prompt <<PROMPT_EOF
-You are the Developer. Your governing contract is @_bmad/orchestrator-master.md
+You are the Developer running in AUTOMATED PIPELINE mode (non-interactive, no user input).
+
+Follow the consolidated dev workflow:
+@scripts/headless-skills/dev-story.md
 
 Working on ONE story:
   ID: $story_id
@@ -553,28 +538,12 @@ Context:
 
 Also run: \`git log --oneline -20\` to see what previous iterations built.
 
-Design reference (for frontend stories):
-If src/scaffolding/ exists, READ these before writing any UI code:
-- src/scaffolding/tokens.md -- design tokens (colors, fonts, spacing)
-- src/scaffolding/layouts/ -- page layout templates
-- src/scaffolding/components/ -- reusable UI component templates
-Match the design language exactly. Do NOT invent new styles.
-
-Task:
-1. Read the story's Requirements and Acceptance Criteria.
-2. Write FAILING unit tests FIRST for each acceptance criterion (TDD).
-3. Implement under src/ following architecture.md until tests pass.
-   For frontend: reference src/scaffolding/ templates, build pages in src/app/ or src/pages/.
-4. Run ALL feedback loops -- fix before continuing:
-   - Build: \`cargo build\` (or project build cmd)
-   - Test:  \`cargo test\`  (or project test cmd)
-   - Lint:  \`cargo clippy\` (or project lint cmd)
-5. When build/test/lint pass AND all acceptance criteria are met:
-   - Update story frontmatter: status: "PENDING_QA"
-   - Fill in ## Implementation Notes: files changed, approach, decisions
-6. Append to _bmad/progress.txt:
-   - What you did, files modified, decisions, notes for QA
-7. Commit: \`git add -A && git commit -m "feat($story_id): <summary>"\`
+Completion criteria:
+- When build/test/lint pass AND all acceptance criteria are met:
+  - Update story frontmatter: status: "PENDING_QA"
+  - Fill in ## Implementation Notes: files changed, approach, decisions
+- Append to _bmad/progress.txt: what you did, files modified, decisions, notes for QA
+- Commit: \`git add -A && git commit -m "feat($story_id): <summary>"\`
 
 Rules:
 - ONLY work on $story_id. Do not touch other stories.
@@ -653,21 +622,23 @@ run_qa() {
 
         local pf
         pf=$(write_prompt <<PROMPT_EOF
-You are the QA Auditor. Your governing contract is @_bmad/orchestrator-master.md
+You are the QA Auditor running in AUTOMATED PIPELINE mode (non-interactive, no user input).
+
+Follow the consolidated code review workflow:
+@scripts/headless-skills/qa-review.md
 
 Auditing ONE story:
   ID: $story_id
   File: @$story_file
 
-Read:
+Context:
 @docs/prd.md
 @docs/architecture.md
-@docs/standards/qa-standards.md
 
 Task:
 1. Read the story's Requirements, Acceptance Criteria, Implementation Notes.
 2. Review the code files referenced in Implementation Notes.
-3. Run the test suite: \`cargo test\` (or project test cmd).
+3. Run the test suite.
 4. Verify each acceptance criterion against the implementation.
 5. Check for regressions vs PRD and architecture.
 

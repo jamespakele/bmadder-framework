@@ -95,7 +95,7 @@ cp -r /path/to/bmadder-framework/scripts ./scripts
 uv run scripts/bootstrap_bmadder.py
 ```
 
-This creates the full folder structure, generates the orchestrator contract and standards files, initializes git, and checks your tooling.
+This creates the full folder structure, generates the orchestrator contract and standards files, synchronizes/freshens headless skills (converting raw interactive BMad skills from `.agent/skills/` into non-interactive Markdown files under `scripts/headless-skills/`), initializes git, and checks your tooling.
 
 ### 4. Add your PRD and architecture
 
@@ -111,11 +111,17 @@ Verifies your agent CLIs are installed, authenticated, and not accidentally bill
 
 ### 6. Run the full cycle
 
+Pick between the batch pipeline or the story-by-story iterative pipeline:
+
 ```bash
+# Option A: Batch Mode (plan all -> dev all -> qa all)
 ./scripts/bmadder.sh cycle
+
+# Option B: Iterative Mode (plan -> per-story dev/qa lifecycle)
+./scripts/bmadder-iterative.sh cycle
 ```
 
-This runs plan → dev → qa, with REFIX loops (max 3 passes). Go get coffee. Check `./scripts/bmadder.sh status` to see where things stand.
+This runs the selected orchestrator cycle. Check `./scripts/bmadder.sh status` (or `./scripts/bmadder-iterative.sh status`) to see where things stand.
 
 ### 7. Run individual phases
 
@@ -232,7 +238,7 @@ links: []
 ## QA Notes
 ```
 
-See `templates/story-template.md` for a blank story you can copy.
+See `.deprecated/templates/story-template.md` for a legacy story template. Stories are normally created dynamically by the Scrum Master planning skill.
 
 ## Commands
 
@@ -303,8 +309,10 @@ uv run scripts/preflight_auth.py --agents claude codex
 
 | File | Purpose |
 |------|---------|
-| `scripts/bmadder.sh` | Main orchestrator — state machine, agent routing, phase execution |
-| `scripts/bootstrap_bmadder.py` | One-command project setup |
+| `scripts/bmadder.sh` | Batch orchestrator — state machine, agent routing, phase execution (plan all → dev all → qa all) |
+| `scripts/bmadder-iterative.sh` | Iterative orchestrator — story-at-a-time lifecycle execution (plan all → per-story dev/qa lifecycle) |
+| `scripts/sync_headless_skills.py` | Headless skill generator — strips interactivity and consolidates source BMAD agent skills |
+| `scripts/bootstrap_bmadder.py` | One-command project setup (calls init, create_rules, sync_headless_skills) |
 | `scripts/init_bmadder.py` | Creates folder structure (called by bootstrap) |
 | `scripts/create_rules.py` | Generates orchestrator contract and standards (called by bootstrap) |
 | `scripts/validate_stories.py` | Validates story frontmatter against state machine |
@@ -314,10 +322,10 @@ uv run scripts/preflight_auth.py --agents claude codex
 
 | File | Purpose |
 |------|---------|
-| `.bmad/orchestrator-master.md` | Governing contract — state machine, roles, conventions |
-| `.bmad/progress.txt` | Append-only dev progress log |
-| `.bmad/logs/activity.log` | Structured activity log |
-| `.bmad/.prompt-tmp.md` | Temp file for agent prompts (gitignored) |
+| `_bmad/orchestrator-master.md` | Governing contract — state machine, roles, conventions |
+| `_bmad/progress.txt` | Append-only dev progress log |
+| `_bmad/logs/activity.log` | Structured activity log |
+| `_bmad/.prompt-tmp.md` | Temp file for agent prompts (gitignored) |
 | `docs/prd.md` | Product Requirements Document |
 | `docs/architecture.md` | Architecture Document |
 | `docs/backlog/stories/` | Story files with YAML frontmatter |
@@ -348,6 +356,7 @@ Runs everything needed to set up a BMADder project:
 4. Verifies required tools (mise, uv, git) and optional tools (claude, codex, gemini, cargo)
 5. Initializes git repo if needed
 6. Checks for PRD and architecture docs
+7. Synchronizes headless skills by running `sync_headless_skills.py` (which processes raw interactive BMAD skills from `.agent/skills/` into consolidated non-interactive Markdown files under `scripts/headless-skills/`).
 
 ```bash
 uv run scripts/bootstrap_bmadder.py          # interactive
@@ -362,7 +371,7 @@ Creates the standard BMADder directory layout. Safe to re-run. Seeds `docs/prd.m
 
 Generates the framework governance files. Skips files that already exist:
 
-- `.bmad/orchestrator-master.md` — agent contract, state machine, story spec
+- `_bmad/orchestrator-master.md` — agent contract, state machine, story spec
 - `docs/standards/scrum-master-guide.md` — SM sharding rules
 - `docs/standards/po-alignment-checklist.md` — PO review questions
 - `docs/standards/qa-standards.md` — QA audit checklist
@@ -426,12 +435,15 @@ See [docs/LESSONS-LEARNED.md](docs/LESSONS-LEARNED.md) for battle-tested knowled
 ```
 your-project/
 ├── scripts/
-│   ├── bmadder.sh                ← Main orchestrator
+│   ├── bmadder.sh                ← Batch orchestrator
+│   ├── bmadder-iterative.sh      ← Iterative orchestrator
 │   ├── bootstrap_bmadder.py      ← One-command setup
 │   ├── init_bmadder.py           ← Folder structure creator
 │   ├── create_rules.py           ← Rules/standards generator
 │   ├── validate_stories.py       ← Frontmatter validator
-│   └── preflight_auth.py         ← Auth/billing safety check
+│   ├── preflight_auth.py         ← Auth/billing safety check
+│   ├── sync_headless_skills.py   ← Headless skill generator
+│   └── headless-skills/          ← Consolidates non-interactive MD skills
 ├── docs/
 │   ├── prd.md                    ← Your product requirements
 │   ├── architecture.md           ← Your system design
@@ -442,7 +454,7 @@ your-project/
 │       ├── scrum-master-guide.md
 │       ├── po-alignment-checklist.md
 │       └── qa-standards.md
-├── .bmad/
+├── _bmad/                        ← Core framework directory
 │   ├── orchestrator-master.md    ← Governing contract
 │   ├── progress.txt              ← Append-only dev log
 │   └── logs/

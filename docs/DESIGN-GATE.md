@@ -69,7 +69,7 @@ mkdir -p src/scaffolding/layouts src/scaffolding/components
 
 ### tokens.md
 
-Create `src/scaffolding/tokens.md` using the template at `templates/tokens-template.md`. Fill in actual values from your Stitch export:
+Create `src/scaffolding/tokens.md` using the template at `.deprecated/templates/tokens-template.md`. Fill in actual values from your Stitch export:
 
 ```markdown
 # Design Tokens
@@ -131,18 +131,12 @@ Create component descriptions in `src/scaffolding/components/`. Example:
 
 ## How Agents Use Scaffolding
 
-The dev prompt in `bmadder.sh` includes:
+The dev agent is routed to standard workflows that instruct it to search for and read any existing `src/scaffolding/` files before generating user interface code. Specifically, the agent is instructed:
+1. To look for `src/scaffolding/tokens.md` for design tokens (colors, fonts, spacing).
+2. To look for layout templates in `src/scaffolding/layouts/`.
+3. To look for reusable UI components in `src/scaffolding/components/`.
 
-```
-Design reference (for frontend stories):
-If src/scaffolding/ exists, READ these before writing any UI code:
-- src/scaffolding/tokens.md — design tokens (colors, fonts, spacing)
-- src/scaffolding/layouts/ — page layout templates
-- src/scaffolding/components/ — reusable UI component templates
-Match the design language exactly. Do NOT invent new styles.
-```
-
-Agents are explicitly told to reference scaffolding and match the design. They don't get to freelance.
+With these rules, agents are explicitly aligned to reference the design system scaffolding and match the style tokens instead of inventing new visual parameters on the fly.
 
 ---
 

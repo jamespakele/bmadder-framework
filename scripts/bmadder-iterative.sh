@@ -51,6 +51,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STORIES_DIR="$ROOT/docs/backlog/stories"
 BMAD_DIR="$ROOT/_bmad"
+HEADLESS_DIR="$ROOT/scripts/headless-skills"
 LOG_FILE="$BMAD_DIR/logs/activity.log"
 PROGRESS_FILE="$BMAD_DIR/progress.txt"
 PROMPT_TMP="$BMAD_DIR/.prompt-itmp.md"
@@ -294,40 +295,32 @@ sm_write_story() {
 
     local pf
     pf=$(write_prompt <<PROMPT_EOF
-You are the Scrum Master. Your governing contract is @_bmad/orchestrator-master.md
+You are the Scrum Master running in AUTOMATED PIPELINE mode (non-interactive, no user input).
+
+Follow the consolidated headless skill instructions:
+@scripts/headless-skills/sm-create-story.md
 
 You are working on ONE story for the iterative pipeline:
   Story ID: $story_id
   File:     @$story_file
 
-Read:
+Context documents:
 @docs/prd.md
 @docs/architecture.md
-@docs/standards/scrum-master-guide.md
-
-Also check:
-@_bmad/progress.txt  (see what has already been completed in this MVP)
-@_bmad/logs/activity.log  (look for past PO rejection notes for this story)
+@_bmad/progress.txt
+@_bmad/logs/activity.log
 
 Your task (pick the correct one based on current story status):
 
 A) If story status is "DRAFT" and content is mostly empty/template:
-   → WRITE the full story. Decompose the PRD requirement this story covers.
+   → WRITE the full story following the workflow and checklist.
    → Set: status: "DRAFT", po_alignment: "PENDING"
-   → Include: Context, Requirements, Acceptance Criteria (numbered, testable),
-     Implementation Notes, PO Alignment, QA Notes sections.
-   → Set agent_hint:
-       "codex"  → backend, API, database, infra, AND frontend
-       "claude" → complex logic, data transforms, config
-   → For UI/frontend stories: reference relevant docs/ui-mockups/ files.
-   → Order dependencies clearly in Implementation Notes.
 
 B) If story status is "REVISE":
-   → READ the ## PO Alignment section — it contains the PO's revision notes.
-   → Address EVERY issue raised.
-   → Update story content to fix the issues.
+   → READ the ## PO Alignment section for revision notes.
+   → Address EVERY issue raised. Update story content.
    → Set: status: "DRAFT", po_alignment: "PENDING"
-   → Append a dated note under ## PO Alignment: "SM revision: [summary of changes]"
+   → Append dated note under ## PO Alignment: "SM revision: [summary of changes]"
 
 Do NOT implement any code.
 Do NOT approve the story yourself.
@@ -354,21 +347,21 @@ po_review_story() {
 
     local pf
     pf=$(write_prompt <<PROMPT_EOF
-You are the Product Owner. Your governing contract is @_bmad/orchestrator-master.md
+You are the Product Owner running in AUTOMATED PIPELINE mode (non-interactive, no user input).
+
+Follow the story quality checklist:
+@scripts/headless-skills/po-review.md
 
 You are reviewing ONE story for the iterative pipeline:
   Story ID: $story_id
   File:     @$story_file
 
-Read:
+Context documents:
 @docs/prd.md
 @docs/architecture.md
-@docs/standards/po-alignment-checklist.md
+@_bmad/progress.txt
 
-Also check:
-@_bmad/progress.txt  (see what is already completed — this story must build on it correctly)
-
-Evaluate this story against ALL of these criteria:
+Evaluate this story against the checklist criteria above PLUS:
 1. Maps to at least one PRD requirement (no orphan work)
 2. Consistent with the architecture (correct layers, patterns, naming)
 3. Requirements are clear, specific, and unambiguous
@@ -478,7 +471,10 @@ dev_implement_story() {
 
     local pf
     pf=$(write_prompt <<PROMPT_EOF
-You are the Developer. Your governing contract is @_bmad/orchestrator-master.md
+You are the Developer running in AUTOMATED PIPELINE mode (non-interactive, no user input).
+
+Follow the consolidated dev workflow:
+@scripts/headless-skills/dev-story.md
 
 Working on ONE story — the CURRENT story in the iterative pipeline:
   ID:   $story_id
@@ -492,28 +488,12 @@ Context:
 Run: \`git log --oneline -20\` to understand what the previous completed stories built.
 This is an INCREMENTAL build. Each story adds to the working MVP. Build on what exists.
 
-Design reference (for frontend stories):
-If src/scaffolding/ exists, read BEFORE writing any UI code:
-  - src/scaffolding/tokens.md    — design tokens (colors, fonts, spacing)
-  - src/scaffolding/layouts/     — page layout templates
-  - src/scaffolding/components/  — reusable UI component templates
-Match the design language exactly. Do NOT invent new styles.
-
-Task:
-1. Read the story's Requirements and Acceptance Criteria carefully.
-2. Write FAILING unit tests FIRST for each acceptance criterion (TDD).
-3. Implement under src/ following architecture.md until all tests pass.
-   For frontend: reference src/scaffolding/ templates; build in src/app/ or src/pages/.
-4. Run ALL feedback loops — fix before declaring done:
-   - Build: run the project build command
-   - Test:  run the project test command
-   - Lint:  run the project lint command
-5. When build/test/lint PASS and ALL acceptance criteria are met:
-   - Update story frontmatter: status: "PENDING_QA"
-   - Fill in ## Implementation Notes: files changed, approach, key decisions
-6. Append to _bmad/progress.txt:
-   - What you built, files modified, decisions made, notes for QA
-7. Commit: \`git add -A && git commit -m "feat($story_id): <summary>"\`
+Completion criteria:
+- When build/test/lint PASS and ALL acceptance criteria are met:
+  - Update story frontmatter: status: "PENDING_QA"
+  - Fill in ## Implementation Notes: files changed, approach, key decisions
+- Append to _bmad/progress.txt: what you built, files modified, decisions, notes for QA
+- Commit: \`git add -A && git commit -m "feat($story_id): <summary>"\`
 
 Rules:
 - ONLY work on $story_id. Do NOT touch other stories.
@@ -552,16 +532,19 @@ qa_review_story() {
 
     local pf
     pf=$(write_prompt <<PROMPT_EOF
-You are the QA Auditor. Your governing contract is @_bmad/orchestrator-master.md
+You are the QA Auditor running in AUTOMATED PIPELINE mode (non-interactive, no user input).
+
+Follow the consolidated code review workflow:
+@scripts/headless-skills/qa-review.md
 
 Auditing ONE story — the CURRENT story in the iterative pipeline:
   ID:   $story_id
   File: @$story_file
 
-Read:
+Context:
 @docs/prd.md
 @docs/architecture.md
-@docs/standards/qa-standards.md
+@_bmad/progress.txt
 
 Task:
 1. Read Requirements, Acceptance Criteria, and Implementation Notes in the story.
@@ -752,13 +735,14 @@ sm_create_next_story() {
 
     local today; today=$(date +%Y-%m-%d)
     local pf prompt_body
-    prompt_body="You are the Scrum Master. Your governing contract is @_bmad/orchestrator-master.md
+    prompt_body="You are the Scrum Master running in AUTOMATED PIPELINE mode (non-interactive, no user input).
 
-Read the full product spec and architecture:
+Follow the consolidated headless skill instructions:
+@scripts/headless-skills/sm-create-story.md
+
+Context documents:
 @docs/prd.md
 @docs/architecture.md
-
-Check what has already been built:
 @_bmad/progress.txt
 
 Also run: \`git log --oneline -30\`
@@ -767,30 +751,18 @@ And review existing stories in: docs/backlog/stories/
 Your task -- pick exactly ONE:
 
 A) If the PRD has features NOT yet implemented (no story file and not in progress.txt):
-   -> Create ONE story file for the next unimplemented feature.
+   -> Create ONE story file following the skill workflow and checklist.
    -> Respect dependencies: foundational/infrastructure stories first.
    -> Filename: docs/backlog/stories/story-NNNN-<slug>.md
       (NNNN = next available 4-digit number)
-   -> Frontmatter (between --- markers):
+   -> Use the template from the skill for story structure.
+   -> Frontmatter must include at minimum:
        story_id: \"STORY-NNNN\"
-       epic_id: \"EPIC-XXXX\"
        title: \"<concise title>\"
        status: \"DRAFT\"
-       priority: \"MUST_HAVE\"
-       agent_hint: \"codex\"
-       assigned_dev: null
        po_alignment: \"PENDING\"
-       qa_status: \"NOT_STARTED\"
        created_at: \"$today\"
        updated_at: \"$today\"
-       links: []
-   -> Sections with full content:
-       ## Context          (why this story, what it enables, dependencies)
-       ## Requirements     (numbered, specific)
-       ## Acceptance Criteria  (numbered, testable)
-       ## Implementation Notes (architecture guidance, files to touch)
-       ## PO Alignment     (leave empty)
-       ## QA Notes         (leave empty)
    -> Log to _bmad/logs/activity.log: \"SM_NEXT: created STORY-NNNN -- <title>\"
 
 B) If the PRD is FULLY implemented:

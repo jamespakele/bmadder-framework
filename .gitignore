@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+.env
+
+# Agent prompt temp files
+_bmad/.prompt-tmp.md
+_bmad/logs/
+_bmad/progress.txt
+
+# Headless skills are generated — commit them intentionally
+# (they are committed so users don't need to run sync on first clone)

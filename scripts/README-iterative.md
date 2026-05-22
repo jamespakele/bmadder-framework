@@ -369,7 +369,7 @@ links: []
 ## QA Notes
 ```
 
-See `templates/story-template.md` for a blank story you can copy.
+See `.deprecated/templates/story-template.md` for a legacy story template. Stories are normally created dynamically by the Scrum Master planning skill.
 
 ## Commands
 
@@ -445,7 +445,8 @@ uv run scripts/preflight_auth.py --agents claude codex
 |------|---------|
 | `scripts/bmadder.sh` | Original batch orchestrator (plan all → dev all → qa all) |
 | `scripts/bmadder-iterative.sh` | **Iterative orchestrator (plan → per-story dev/qa lifecycle)** |
-| `scripts/bootstrap_bmadder.py` | One-command project setup |
+| `scripts/sync_headless_skills.py` | Headless skill generator — strips interactivity and consolidates source BMAD agent skills |
+| `scripts/bootstrap_bmadder.py` | One-command project setup (calls init, create_rules, sync_headless_skills) |
 | `scripts/init_bmadder.py` | Creates folder structure (called by bootstrap) |
 | `scripts/create_rules.py` | Generates orchestrator contract and standards (called by bootstrap) |
 | `scripts/validate_stories.py` | Validates story frontmatter against state machine |
@@ -455,10 +456,10 @@ uv run scripts/preflight_auth.py --agents claude codex
 
 | File | Purpose |
 |------|---------|
-| `.bmad/orchestrator-master.md` | Governing contract — state machine, roles, conventions |
-| `.bmad/progress.txt` | Append-only dev progress log |
-| `.bmad/logs/activity.log` | Structured activity log |
-| `.bmad/.prompt-tmp.md` | Temp file for agent prompts (gitignored) |
+| `_bmad/orchestrator-master.md` | Governing contract — state machine, roles, conventions |
+| `_bmad/progress.txt` | Append-only dev progress log |
+| `_bmad/logs/activity.log` | Structured activity log |
+| `_bmad/.prompt-tmp.md` | Temp file for agent prompts (gitignored) |
 | `docs/prd.md` | Product Requirements Document |
 | `docs/architecture.md` | Architecture Document |
 | `docs/backlog/stories/` | Story files with YAML frontmatter |
@@ -506,6 +507,7 @@ Runs everything needed to set up a BMADder project:
 4. Verifies required tools (mise, uv, git) and optional tools (claude, codex, gemini, cargo)
 5. Initializes git repo if needed
 6. Checks for PRD and architecture docs
+7. Synchronizes headless skills by running `sync_headless_skills.py` (which processes raw interactive BMAD skills from `.agent/skills/` into consolidated non-interactive Markdown files under `scripts/headless-skills/`).
 
 ```bash
 uv run scripts/bootstrap_bmadder.py          # interactive
@@ -575,7 +577,9 @@ your-project/
 │   ├── init_bmadder.py           ← Folder structure creator
 │   ├── create_rules.py           ← Rules/standards generator
 │   ├── validate_stories.py       ← Frontmatter validator
-│   └── preflight_auth.py         ← Auth/billing safety check
+│   ├── preflight_auth.py         ← Auth/billing safety check
+│   ├── sync_headless_skills.py   ← Headless skill generator
+│   └── headless-skills/          ← Consolidates non-interactive MD skills
 ├── docs/
 │   ├── prd.md                    ← Your product requirements
 │   ├── architecture.md           ← Your system design
@@ -586,7 +590,7 @@ your-project/
 │       ├── scrum-master-guide.md
 │       ├── po-alignment-checklist.md
 │       └── qa-standards.md
-├── .bmad/
+├── _bmad/                        ← Core framework directory
 │   ├── orchestrator-master.md    ← Governing contract
 │   ├── progress.txt              ← Append-only dev log
 │   └── logs/

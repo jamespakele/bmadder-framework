@@ -148,15 +148,42 @@ def main():
     run_script("create_rules.py")
     print()
 
-    # Step 3: Config files
-    print("Step 3: Config files")
+    # Step 3: Sync headless skills for pipeline scripts
+    print("Step 3: Headless skills")
+    sync_script = ROOT / "scripts" / "sync_headless_skills.py"
+    manifest = ROOT / "scripts" / "headless-skills" / "manifest.json"
+    if sync_script.exists():
+        if manifest.exists():
+            # Check freshness first — only regenerate if stale
+            try:
+                result = subprocess.run(
+                    [sys.executable, str(sync_script), "--check"],
+                    capture_output=True, text=True, cwd=str(ROOT),
+                )
+                if result.returncode != 0:
+                    print("  [STALE] Headless skills out of date, regenerating...")
+                    run_script("sync_headless_skills.py")
+                else:
+                    print("  [OK]   Headless skills are up-to-date.")
+            except Exception:
+                print("  [WARN] Could not check staleness, regenerating...")
+                run_script("sync_headless_skills.py")
+        else:
+            print("  [INIT] Generating headless skills for first time...")
+            run_script("sync_headless_skills.py")
+    else:
+        print("  [SKIP] sync_headless_skills.py not found.")
+    print()
+
+    # Step 4: Config files
+    print("Step 4: Config files")
     write_mise_toml()
     write_gitignore()
     make_executable()
     print()
 
-    # Step 4: Verify tooling
-    print("Step 4: Tooling check")
+    # Step 5: Verify tooling
+    print("Step 5: Tooling check")
     tools_ok = True
     tools_ok &= check_tool("mise", ["mise", "--version"])
     tools_ok &= check_tool("uv", ["uv", "--version"])
@@ -176,13 +203,13 @@ def main():
         print("  git:   apt install git (or your OS package manager)")
     print()
 
-    # Step 5: Git init
-    print("Step 5: Git repo")
+    # Step 6: Git init
+    print("Step 6: Git repo")
     init_git()
     print()
 
-    # Step 6: Check for PRD and architecture
-    print("Step 6: Project files")
+    # Step 7: Check for PRD and architecture
+    print("Step 7: Project files")
     prd = ROOT / "docs/prd.md"
     arch = ROOT / "docs/architecture.md"
     prd_ready = prd.exists() and prd.stat().st_size > 500
