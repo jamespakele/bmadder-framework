@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; height:100%; background:#f4f3ef; }
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:#dad8d0; border-radius:6px; }
+  ::-webkit-scrollbar-track{ background:transparent; }
+  @keyframes cardIn{ from{ opacity:0; transform:translateY(7px) scale(.98);} to{ opacity:1; transform:none;} }
+  @keyframes glowPulse{ 0%,100%{ box-shadow:0 0 0 0 rgba(79,70,229,0);} 50%{ box-shadow:0 0 0 4px rgba(79,70,229,.12);} }
+</style>
+</helmet>
+<div style="position:relative; width:100%; min-width:1280px; height:100vh; display:flex; flex-direction:column; background:#f4f3ef; color:#1c1c1e; font-family:'Space Grotesk',system-ui,sans-serif; font-size:13px; overflow:hidden;">
+
+  <!-- ===== TOP BAR ===== -->
+  <div style="height:56px; flex:none; display:flex; align-items:center; gap:18px; padding:0 20px; background:#fff; border-bottom:1px solid #e5e3dc;">
+    <div style="display:flex; align-items:center; gap:10px;">
+      <div style="width:27px; height:27px; border-radius:8px; background:#4f46e5; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; font-size:14px;">B</div>
+      <div style="font-weight:700; font-size:15px; letter-spacing:-.2px;">BMADder <span style="color:#9a9a9f; font-weight:500;">Board</span></div>
+    </div>
+    <div style="display:flex; gap:3px; padding:3px; background:#f0efe9; border:1px solid #e5e3dc; border-radius:9px; margin-left:6px;">
+      <div onClick="{{ setCycle }}" style="padding:7px 15px; border-radius:6px; cursor:pointer; font-weight:600; font-size:12.5px; background:{{ cycleTabBg }}; color:{{ cycleTabColor }}; box-shadow:{{ cycleTabShadow }};">Cycle</div>
+      <div onClick="{{ setIterative }}" style="padding:7px 15px; border-radius:6px; cursor:pointer; font-weight:600; font-size:12.5px; background:{{ iterTabBg }}; color:{{ iterTabColor }}; box-shadow:{{ iterTabShadow }};">Iterative</div>
+    </div>
+    <div style="flex:1;"></div>
+    <div style="font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:#6b6b70; background:#f0efe9; border:1px solid #e5e3dc; padding:6px 11px; border-radius:7px;">~/projects/bmadder-pi</div>
+    <div onClick="{{ openConfig }}" style="width:36px; height:36px; display:flex; align-items:center; justify-content:center; border:1px solid #e5e3dc; border-radius:8px; cursor:pointer; color:#6b6b70; background:#fff;">⚙</div>
+  </div>
+
+  <!-- ===== EXPLANATION BANNER ===== -->
+  <div style="flex:none; padding:16px 20px; background:#fff; border-bottom:1px solid #e5e3dc; display:flex; align-items:center; gap:22px;">
+    <div style="flex:none; max-width:430px;">
+      <div style="display:flex; align-items:center; gap:9px;">
+        <span style="font-size:16px; font-weight:700; letter-spacing:-.3px;">{{ modeTitle }}</span>
+        <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#4f46e5; background:#eeedfb; padding:3px 9px; border-radius:20px;">{{ modeCmd }}</span>
+      </div>
+      <div style="color:#6b6b70; font-size:12.5px; line-height:1.5; margin-top:6px;">{{ modeBody }}</div>
+    </div>
+    <!-- phase flow pills -->
+    <div style="display:flex; align-items:center; gap:0; flex-wrap:wrap;">
+      <sc-for list="{{ flowPills }}" as="p" hint-placeholder-count="4">
+        <div style="display:flex; align-items:center;">
+          <div style="text-align:center; padding:0 4px;">
+            <div style="display:flex; align-items:center; gap:7px; background:{{ p.bg }}; border:1px solid {{ p.border }}; padding:7px 12px; border-radius:9px;">
+              <span style="width:20px; height:20px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff; background:{{ p.color }};">{{ p.glyph }}</span>
+              <div style="text-align:left; line-height:1.15;">
+                <div style="font-size:12px; font-weight:600; color:#1c1c1e;">{{ p.label }}</div>
+                <div style="font-size:9.5px; color:#9a9a9f;">{{ p.who }}</div>
+              </div>
+            </div>
+          </div>
+          <sc-if value="{{ p.arrow }}" hint-placeholder-val="{{ true }}">
+            <span style="color:#c8c6bd; font-size:13px; margin:0 1px;">→</span>
+          </sc-if>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- ===== CONTROL BAR ===== -->
+  <div style="flex:none; padding:11px 20px; background:#faf9f6; border-bottom:1px solid #e5e3dc; display:flex; align-items:center; gap:10px;">
+    <span style="font-size:10px; letter-spacing:1.3px; text-transform:uppercase; color:#9a9a9f; font-weight:600; margin-right:2px;">Run phase</span>
+    <div onClick="{{ doPlan }}" style="display:flex; align-items:center; gap:7px; padding:8px 13px; border-radius:8px; cursor:pointer; background:#fff; border:1px solid #e0ddd4; font-weight:600; font-size:12.5px;"><span style="width:9px; height:9px; border-radius:3px; background:#6d5ae0;"></span>plan</div>
+    <div onClick="{{ doDev }}" style="display:flex; align-items:center; gap:7px; padding:8px 13px; border-radius:8px; cursor:pointer; background:#fff; border:1px solid #e0ddd4; font-weight:600; font-size:12.5px;"><span style="width:9px; height:9px; border-radius:3px; background:#2f6fe0;"></span>dev</div>
+    <div onClick="{{ doQA }}" style="display:flex; align-items:center; gap:7px; padding:8px 13px; border-radius:8px; cursor:pointer; background:#fff; border:1px solid #e0ddd4; font-weight:600; font-size:12.5px;"><span style="width:9px; height:9px; border-radius:3px; background:#0f9b8e;"></span>qa</div>
+    <div style="width:1px; height:22px; background:#e0ddd4; margin:0 4px;"></div>
+    <div onClick="{{ runFull }}" style="display:flex; align-items:center; gap:8px; padding:8px 16px; border-radius:8px; cursor:pointer; background:#4f46e5; color:#fff; font-weight:600; font-size:12.5px;">▸ {{ runFullLabel }}</div>
+    <div onClick="{{ reset }}" style="display:flex; align-items:center; gap:6px; padding:8px 13px; border-radius:8px; cursor:pointer; background:#fff; border:1px solid #e0ddd4; color:#6b6b70; font-weight:500; font-size:12.5px;">↺ Reset</div>
+    <div style="flex:1;"></div>
+    <div style="font-size:11.5px; color:#6b6b70;"><span style="font-weight:700; color:#1f8a5b;">{{ completedCount }}</span> of {{ totalCount }} completed</div>
+    <div style="width:120px; height:7px; background:#e8e6df; border-radius:5px; overflow:hidden;"><div style="height:100%; width:{{ donePct }}; background:#1f8a5b; transition:width .4s;"></div></div>
+  </div>
+
+  <!-- ===== BODY: BOARD + DRAWER ===== -->
+  <div style="flex:1; display:flex; min-height:0;">
+
+    <!-- board -->
+    <div style="flex:1; min-width:0; overflow:auto; padding:16px 20px;">
+      <div style="display:flex; gap:13px; align-items:flex-start; min-width:min-content; height:100%;">
+        <sc-for list="{{ columns }}" as="col" hint-placeholder-count="7">
+          <div style="flex:none; width:196px; display:flex; flex-direction:column; max-height:100%;">
+            <!-- column header -->
+            <div style="display:flex; align-items:center; gap:8px; padding:4px 4px 10px;">
+              <span style="width:9px; height:9px; border-radius:50%; background:{{ col.color }};"></span>
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; color:#1c1c1e;">{{ col.key }}</span>
+              <span style="font-size:11px; font-weight:700; color:{{ col.color }}; margin-left:auto;">{{ col.count }}</span>
+            </div>
+            <!-- column body -->
+            <div style="flex:1; min-height:120px; background:{{ col.laneBg }}; border:1px solid {{ col.laneBorder }}; border-radius:11px; padding:8px; display:flex; flex-direction:column; gap:8px; overflow-y:auto;">
+              <sc-for list="{{ col.cards }}" as="c" hint-placeholder-count="0">
+                <div onClick="{{ c.onSelect }}" style="background:#fff; border:1px solid {{ c.cardBorder }}; border-left:3px solid {{ c.color }}; border-radius:9px; padding:9px 10px; cursor:pointer; box-shadow:0 1px 2px rgba(40,38,30,.05); animation:cardIn .26s ease;">
+                  <div style="display:flex; align-items:center; justify-content:space-between;">
+                    <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600; color:#9a9a9f;">{{ c.id }}</span>
+                    <span style="font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; padding:2px 5px; border-radius:4px; color:{{ c.hintColor }}; background:{{ c.hintBg }};">{{ c.hint }}</span>
+                  </div>
+                  <div style="font-size:12px; font-weight:600; line-height:1.3; margin-top:4px; color:#1c1c1e;">{{ c.title }}</div>
+                  <div style="display:flex; align-items:center; gap:7px; margin-top:8px;">
+                    <span style="width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; color:#fff; background:{{ c.avatarBg }};">{{ c.avatar }}</span>
+                    <span style="font-size:10px; color:#9a9a9f; font-family:'IBM Plex Mono',monospace;">{{ c.model }}</span>
+                    <span style="margin-left:auto; font-size:9.5px; color:#9a9a9f;">{{ c.acLabel }}</span>
+                  </div>
+                </div>
+              </sc-for>
+              <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+                <div style="text-align:center; padding:14px 4px; font-size:10.5px; color:#bdbbb2; font-style:italic;">{{ col.hint }}</div>
+              </sc-if>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- ===== RIGHT DRAWER ===== -->
+    <div style="width:312px; flex:none; background:#fff; border-left:1px solid #e5e3dc; overflow-y:auto;">
+
+      <!-- story detail -->
+      <sc-if value="{{ showStory }}" hint-placeholder-val="{{ false }}">
+        <div style="padding:18px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+            <span style="font-size:10px; letter-spacing:1.3px; text-transform:uppercase; color:#9a9a9f; font-weight:600;">Story detail</span>
+            <span onClick="{{ clearSel }}" style="cursor:pointer; color:#9a9a9f; font-size:17px;">×</span>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#9a9a9f;">{{ sel.id }} · {{ sel.epic }}</div>
+          <div style="font-size:17px; font-weight:700; margin-top:4px; line-height:1.25; letter-spacing:-.2px;">{{ sel.title }}</div>
+          <div style="display:inline-flex; align-items:center; gap:6px; margin-top:11px; font-size:11px; font-weight:600; padding:5px 11px; border-radius:20px; color:{{ sel.color }}; background:{{ sel.chipBg }}; border:1px solid {{ sel.chipBorder }};"><span style="width:7px; height:7px; border-radius:50%; background:{{ sel.color }};"></span>{{ sel.statusLabel }}</div>
+          <div style="color:#52525a; font-size:12.5px; line-height:1.55; margin-top:14px;">{{ sel.summary }}</div>
+
+          <div style="display:flex; gap:9px; margin-top:16px;">
+            <div style="flex:1; background:#faf9f6; border:1px solid #e8e6df; border-radius:9px; padding:9px 11px;">
+              <div style="font-size:9.5px; color:#9a9a9f; text-transform:uppercase; letter-spacing:.7px;">Dev agent</div>
+              <div style="display:flex; align-items:center; gap:6px; margin-top:5px;"><span style="width:18px; height:18px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:9px; font-weight:700; color:#fff; background:{{ sel.avatarBg }};">{{ sel.avatar }}</span><span style="font-size:12px; font-weight:600;">{{ sel.persona }}</span></div>
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#4f46e5; margin-top:4px;">{{ sel.model }}</div>
+            </div>
+            <div style="flex:1; background:#faf9f6; border:1px solid #e8e6df; border-radius:9px; padding:9px 11px;">
+              <div style="font-size:9.5px; color:#9a9a9f; text-transform:uppercase; letter-spacing:.7px;">agent_hint</div>
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:13px; font-weight:600; margin-top:6px; color:#1c1c1e;">{{ sel.hint }}</div>
+            </div>
+          </div>
+
+          <div style="font-size:9.5px; letter-spacing:1.1px; text-transform:uppercase; color:#9a9a9f; font-weight:600; margin:18px 0 8px;">Acceptance criteria · {{ sel.acLabel }}</div>
+          <div style="height:7px; background:#ececea; border-radius:4px; overflow:hidden;"><div style="height:100%; width:{{ sel.acPct }}; background:linear-gradient(90deg,#2f6fe0,#0f9b8e);"></div></div>
+
+          <div style="font-size:9.5px; letter-spacing:1.1px; text-transform:uppercase; color:#9a9a9f; font-weight:600; margin:18px 0 9px;">Position in state machine</div>
+          <sc-for list="{{ sel.machine }}" as="m" hint-placeholder-count="7">
+            <div style="display:flex; align-items:center; gap:9px; padding:5px 9px; border-radius:7px; background:{{ m.bg }}; margin-bottom:4px;">
+              <span style="width:8px; height:8px; border-radius:50%; flex:none; background:{{ m.dot }};"></span>
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; font-weight:{{ m.weight }}; color:{{ m.fg }};">{{ m.key }}</span>
+              <sc-if value="{{ m.current }}" hint-placeholder-val="{{ false }}"><span style="margin-left:auto; font-size:9.5px; font-weight:600; color:{{ m.dot }};">● here</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- default workflow guide -->
+      <sc-if value="{{ showGuide }}" hint-placeholder-val="{{ true }}">
+        <div style="padding:18px;">
+          <div style="font-size:10px; letter-spacing:1.3px; text-transform:uppercase; color:#9a9a9f; font-weight:600; margin-bottom:12px;">Agents · pi.dev</div>
+          <sc-for list="{{ agents }}" as="a" hint-placeholder-count="2">
+            <div style="display:flex; align-items:center; gap:10px; background:#faf9f6; border:1px solid #e8e6df; border-radius:10px; padding:9px 11px; margin-bottom:8px;">
+              <span style="width:30px; height:30px; flex:none; border-radius:8px; display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff; font-size:13px; background:{{ a.color }};">{{ a.initial }}</span>
+              <div style="flex:1;"><div style="font-weight:600; font-size:13px;">{{ a.name }}</div><div style="font-size:10.5px; color:#9a9a9f;">{{ a.role }}</div></div>
+              <span style="font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#52525a; background:#ececea; padding:3px 6px; border-radius:5px;">{{ a.model }}</span>
+            </div>
+          </sc-for>
+
+          <div style="font-size:10px; letter-spacing:1.3px; text-transform:uppercase; color:#9a9a9f; font-weight:600; margin:18px 0 10px;">Workspace folders</div>
+          <div style="background:#faf9f6; border:1px solid #e8e6df; border-radius:10px; padding:8px 12px;">
+            <sc-for list="{{ paths }}" as="p" hint-placeholder-count="5">
+              <div style="display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 0; border-bottom:1px solid #ececea;">
+                <span style="color:#6b6b70; font-size:11px;">{{ p.label }}</span>
+                <span style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#1f8a5b; background:#e8f4ee; padding:2px 6px; border-radius:4px;">{{ p.value }}</span>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="margin-top:16px; background:#eeedfb; border:1px solid #ddd9f7; border-radius:10px; padding:12px 13px;">
+            <div style="font-size:12px; font-weight:600; color:#312b8f;">Editable, zero recompile</div>
+            <div style="font-size:11px; color:#5b56a8; line-height:1.55; margin-top:4px;">Personalities live in <span style="font-family:'IBM Plex Mono',monospace;">.agent/skills/</span>, workflows in <span style="font-family:'IBM Plex Mono',monospace;">scripts/headless-skills/</span>, and all routing in <span style="font-family:'IBM Plex Mono',monospace;">bmadder.toml</span>.</div>
+            <div onClick="{{ openConfig }}" style="display:inline-block; margin-top:10px; padding:7px 13px; background:#4f46e5; color:#fff; font-size:11.5px; font-weight:600; border-radius:7px; cursor:pointer;">Open bmadder.toml →</div>
+          </div>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+
+  <!-- ===== CONFIG MODAL ===== -->
+  <sc-if value="{{ showConfig }}" hint-placeholder-val="{{ false }}">
+    <div onClick="{{ closeConfig }}" style="position:fixed; inset:0; background:rgba(28,26,20,.32); backdrop-filter:blur(2px); display:flex; align-items:center; justify-content:center; z-index:50;">
+      <div onClick="{{ stop }}" style="width:640px; max-height:84vh; overflow-y:auto; background:#fff; border:1px solid #e5e3dc; border-radius:14px; box-shadow:0 24px 60px rgba(40,38,30,.22);">
+        <div style="position:sticky; top:0; display:flex; align-items:center; justify-content:space-between; padding:16px 20px; border-bottom:1px solid #e8e6df; background:#fff;">
+          <div style="display:flex; align-items:center; gap:10px;"><span style="font-size:15px; font-weight:700;">bmadder.toml</span><span style="font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:#9a9a9f;">project root · zero recompile</span></div>
+          <span onClick="{{ closeConfig }}" style="cursor:pointer; color:#9a9a9f; font-size:20px;">×</span>
+        </div>
+        <div style="padding:18px 20px;">
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#4f46e5; letter-spacing:1px; margin-bottom:8px;">[models]</div>
+          <div style="background:#faf9f6; border:1px solid #e8e6df; border-radius:9px; padding:6px 12px; margin-bottom:16px;">
+            <sc-for list="{{ cfgModels }}" as="m" hint-placeholder-count="5"><div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid #ececea; font-family:'IBM Plex Mono',monospace; font-size:11.5px;"><span style="color:#1c1c1e;">{{ m.k }}</span><span style="color:#1f8a5b;">"{{ m.v }}"</span></div></sc-for>
+          </div>
+          <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#4f46e5; letter-spacing:1px; margin-bottom:8px;">[roles.*]</div>
+          <div style="background:#faf9f6; border:1px solid #e8e6df; border-radius:9px; overflow:hidden; margin-bottom:16px;">
+            <div style="display:flex; padding:8px 12px; font-size:9.5px; color:#9a9a9f; text-transform:uppercase; letter-spacing:.7px; border-bottom:1px solid #e8e6df;"><span style="flex:1;">role</span><span style="flex:1.5;">personality</span><span style="flex:.9;">model</span><span style="flex:1.7;">headless</span></div>
+            <sc-for list="{{ cfgRoles }}" as="r" hint-placeholder-count="5"><div style="display:flex; padding:8px 12px; font-family:'IBM Plex Mono',monospace; font-size:11px; border-bottom:1px solid #ececea; align-items:center;"><span style="flex:1; font-weight:600;">{{ r.role }}</span><span style="flex:1.5; color:#1f8a5b;">{{ r.personality }}</span><span style="flex:.9; color:#4f46e5;">{{ r.model }}</span><span style="flex:1.7; color:#6b6b70;">{{ r.headless }}</span></div></sc-for>
+          </div>
+          <div style="display:flex; gap:16px;">
+            <div style="flex:1;">
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#4f46e5; letter-spacing:1px; margin-bottom:8px;">[agent_hints]</div>
+              <div style="background:#faf9f6; border:1px solid #e8e6df; border-radius:9px; padding:6px 12px;"><sc-for list="{{ cfgHints }}" as="h" hint-placeholder-count="3"><div style="display:flex; justify-content:space-between; padding:6px 0; font-family:'IBM Plex Mono',monospace; font-size:11.5px;"><span>{{ h.k }}</span><span style="color:#4f46e5;">{{ h.v }}</span></div></sc-for></div>
+            </div>
+            <div style="flex:1;">
+              <div style="font-family:'IBM Plex Mono',monospace; font-size:10px; color:#4f46e5; letter-spacing:1px; margin-bottom:8px;">[defaults]</div>
+              <div style="background:#faf9f6; border:1px solid #e8e6df; border-radius:9px; padding:6px 12px;"><sc-for list="{{ cfgDefaults }}" as="d" hint-placeholder-count="4"><div style="display:flex; justify-content:space-between; padding:6px 0; font-family:'IBM Plex Mono',monospace; font-size:11px;"><span style="color:#6b6b70;">{{ d.k }}</span><span>{{ d.v }}</span></div></sc-for></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:900},&quot;defaultMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;cycle&quot;,&quot;iterative&quot;],&quot;default&quot;:&quot;cycle&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  constructor(props){
+    super(props);
+    this._timers=[];
+    this._failTarget='STORY-0006';
+    this._qaFailedUsed=false;
+    this.state={ mode:(props&&props.defaultMode)||'cycle', stories:this.seed(), log:[], selStory:null, showConfig:false };
+  }
+  componentWillUnmount(){ this.clearTimers(); }
+  clearTimers(){ this._timers.forEach(t=>clearTimeout(t)); this._timers=[]; }
+
+  seed(){
+    return [
+      {id:'STORY-0001',num:'01',title:'Story frontmatter parser',hint:'claude',status:'COMPLETED',epic:'Core',summary:'serde_yaml round-trip parser: frontmatter fences, status enum, body split.',acDone:6,acTotal:6},
+      {id:'STORY-0002',num:'02',title:'Config loader & TOML',hint:'claude',status:'COMPLETED',epic:'Core',summary:'Load bmadder.toml, resolve paths relative to config dir, env + CLI overlay.',acDone:8,acTotal:8},
+      {id:'STORY-0003',num:'03',title:'pi.dev agent invocation',hint:'codex',status:'COMPLETED',epic:'Agents',summary:'Build pi.dev command from [pi_dev] template, spawn, timeout, parse JSON output.',acDone:5,acTotal:5},
+      {id:'STORY-0004',num:'04',title:'Git integration & snapshots',hint:'codex',status:'IN_DEV',epic:'Safety',summary:'Pre-dev snapshot, QA-pass commit + push, discard orphaned code on crash.',acDone:4,acTotal:7},
+      {id:'STORY-0005',num:'05',title:'Sequential dev loop',hint:'codex',status:'READY_FOR_DEV',epic:'Phases',summary:'Queue READY_FOR_DEV + REFIX stories; per-story iterations until PENDING_QA.',acDone:0,acTotal:5},
+      {id:'STORY-0006',num:'06',title:'QA audit phase',hint:'claude',status:'READY_FOR_DEV',epic:'Phases',summary:'Audit PENDING_QA stories vs acceptance criteria; enforce PASS/FAIL on disk.',acDone:0,acTotal:4},
+      {id:'STORY-0007',num:'07',title:'Crash recovery & resume',hint:'gemini',status:'REFIX',epic:'Safety',summary:'Reset IN_DEV stories, git checkout orphaned code, resume the dependency queue.',acDone:3,acTotal:6},
+      {id:'STORY-0008',num:'08',title:'Logging & activity audit',hint:'claude',status:'DRAFT',epic:'Observability',summary:'Structured activity.log TSV + append-only progress.txt + colored console status.',acDone:0,acTotal:5},
+      {id:'STORY-0009',num:'09',title:'Bootstrap module',hint:'codex',status:'DRAFT',epic:'Setup',summary:'One-command setup: folders, bmadder.toml, headless skills, git init, tooling check.',acDone:0,acTotal:8}
+    ];
+  }
+
+  clock(n){ const tot=5+n*4; const mm=30+Math.floor(tot/60); const ss=tot%60; return '14:'+String(mm).padStart(2,'0')+':'+String(ss).padStart(2,'0'); }
+
+  transition(pred,to,phase){
+    this.setState(prev=>{
+      const log=[...prev.log];
+      const stories=prev.stories.map(s=>{
+        if(pred(s)){
+          if(to===null){ log.push({time:this.clock(log.length),text:'GIT  '+s.id+' · commit + push',fail:false}); return s; }
+          log.push({time:this.clock(log.length),text:phase+' '+s.id+' → '+to,fail:to==='REFIX'}); return {...s,status:to};
+        }
+        return s;
+      });
+      return {stories,log};
+    });
+  }
+
+  // ---- phase actions (map to bmadder plan / dev / qa) ----
+  doPlan(){ this.clearTimers(); this.transition(s=>s.status==='DRAFT'||s.status==='REVISE','READY_FOR_DEV','PO  '); }
+  doDev(){
+    this.clearTimers();
+    this.transition(s=>s.status==='READY_FOR_DEV'||s.status==='REFIX','IN_DEV','DEV ');
+    this._timers.push(setTimeout(()=>this.transition(s=>s.status==='IN_DEV','PENDING_QA','DEV '),650));
+  }
+  doQA(){
+    this.clearTimers();
+    this.setState(prev=>{
+      const log=[...prev.log]; let used=this._qaFailedUsed;
+      const stories=prev.stories.map(s=>{
+        if(s.status==='PENDING_QA'){
+          if(!used && s.id===this._failTarget){ used=true; log.push({time:this.clock(log.length),text:'QA   '+s.id+' → REFIX',fail:true}); return {...s,status:'REFIX'}; }
+          log.push({time:this.clock(log.length),text:'QA   '+s.id+' → COMPLETED',fail:false}); return {...s,status:'COMPLETED'};
+        }
+        return s;
+      });
+      this._qaFailedUsed=used; return {stories,log};
+    });
+  }
+
+  playSequence(steps,gap){ this.clearTimers(); steps.forEach((fn,i)=>this._timers.push(setTimeout(fn,i*gap))); }
+
+  runCycle(){
+    const inDev=()=>this.transition(s=>s.status==='READY_FOR_DEV'||s.status==='REFIX','IN_DEV','DEV ');
+    const pend=()=>this.transition(s=>s.status==='IN_DEV','PENDING_QA','DEV ');
+    const qa=()=>this.doQAInline();
+    const plan=()=>this.transition(s=>s.status==='DRAFT'||s.status==='REVISE','READY_FOR_DEV','PO  ');
+    this.playSequence([plan,inDev,pend,qa,inDev,pend,qa],850);
+  }
+  doQAInline(){
+    this.setState(prev=>{
+      const log=[...prev.log]; let used=this._qaFailedUsed;
+      const stories=prev.stories.map(s=>{
+        if(s.status==='PENDING_QA'){
+          if(!used && s.id===this._failTarget){ used=true; log.push({time:this.clock(log.length),text:'QA   '+s.id+' → REFIX',fail:true}); return {...s,status:'REFIX'}; }
+          log.push({time:this.clock(log.length),text:'QA   '+s.id+' → COMPLETED',fail:false}); return {...s,status:'COMPLETED'};
+        }
+        return s;
+      });
+      this._qaFailedUsed=used; return {stories,log};
+    });
+  }
+  runIterative(){
+    const order=this.state.stories.filter(s=>s.status!=='COMPLETED').slice().sort((a,b)=>a.num.localeCompare(b.num));
+    const steps=[]; const setS=(id,to,ph)=>()=>this.transition(s=>s.id===id,to,ph);
+    order.forEach(s=>{
+      if(s.status==='DRAFT'||s.status==='REVISE') steps.push(setS(s.id,'READY_FOR_DEV','PO  '));
+      if(s.status!=='PENDING_QA') steps.push(setS(s.id,'IN_DEV','DEV '));
+      steps.push(setS(s.id,'PENDING_QA','DEV '));
+      if(s.id===this._failTarget && !this._qaFailedUsed){ this._qaFailedUsed=true; steps.push(setS(s.id,'REFIX','QA  ')); steps.push(setS(s.id,'IN_DEV','DEV ')); steps.push(setS(s.id,'PENDING_QA','DEV ')); }
+      steps.push(setS(s.id,'COMPLETED','QA  '));
+      steps.push(setS(s.id,null,'GIT'));
+    });
+    this.playSequence(steps,560);
+  }
+  runFull(){ if(this.state.mode==='cycle') this.runCycle(); else this.runIterative(); }
+  reset(){ this.clearTimers(); this._qaFailedUsed=false; this.setState({stories:this.seed(),log:[],selStory:null}); }
+  setMode(m){ this.clearTimers(); this._qaFailedUsed=false; this.setState({mode:m,stories:this.seed(),log:[],selStory:null}); }
+
+  meta(s){ const M={DRAFT:{l:'Draft',c:'#c98a18'},REVISE:{l:'Revise',c:'#c98a18'},READY_FOR_DEV:{l:'Ready for dev',c:'#2f6fe0'},IN_DEV:{l:'In dev',c:'#2f6fe0'},PENDING_QA:{l:'Pending QA',c:'#c98a18'},REFIX:{l:'Refix',c:'#d23b3f'},COMPLETED:{l:'Completed',c:'#1f8a5b'}}; return M[s]; }
+  tint(hex,a){ const n=parseInt(hex.slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
+  modelOf(h){ return {codex:'gpt-5',claude:'claude-sonnet-4',gemini:'gemini-2.5-pro'}[h]||'gpt-5'; }
+
+  renderVals(){
+    const st=this.state; const isCycle=st.mode==='cycle';
+    const enrich=(s)=>{ const m=this.meta(s.status); return { ...s, statusLabel:m.l, color:m.c,
+      chipBg:this.tint(m.c,.1), chipBorder:this.tint(m.c,.32), cardBorder:'#ebe9e2',
+      hint:s.hint, hintColor:s.hint==='codex'?'#2f6fe0':(s.hint==='gemini'?'#0f9b8e':'#6d5ae0'),
+      hintBg:s.hint==='codex'?'#e9f0fc':(s.hint==='gemini'?'#e4f5f2':'#efedfb'),
+      avatar:'A', avatarBg:'#2f6fe0', persona:'Amelia', model:this.modelOf(s.hint),
+      acLabel:s.acDone+'/'+s.acTotal+' AC', acPct:Math.round(s.acDone/s.acTotal*100)+'%',
+      onSelect:()=>this.setState({selStory:s.id}) };};
+    const stories=st.stories.map(enrich);
+
+    const COLS=[
+      {key:'DRAFT',color:'#c98a18',hint:'no drafts'},
+      {key:'REVISE',color:'#c98a18',hint:'none bounced'},
+      {key:'READY_FOR_DEV',color:'#2f6fe0',hint:'queue empty'},
+      {key:'IN_DEV',color:'#2f6fe0',hint:'nobody coding'},
+      {key:'PENDING_QA',color:'#c98a18',hint:'nothing to audit'},
+      {key:'REFIX',color:'#d23b3f',hint:'no failures'},
+      {key:'COMPLETED',color:'#1f8a5b',hint:'none done yet'}
+    ];
+    const columns=COLS.map(c=>{ const cards=stories.filter(s=>s.status===c.key); return {...c, cards, count:cards.length, empty:cards.length===0,
+      laneBg:cards.length?this.tint(c.color,.045):'#f0efe9', laneBorder:cards.length?this.tint(c.color,.18):'#e8e6df' };});
+
+    const count=(k)=>st.stories.filter(s=>s.status===k).length;
+    const completedCount=count('COMPLETED'), totalCount=st.stories.length;
+
+    const FLOW = isCycle ? [
+      {label:'SM',who:'Amelia · batch',glyph:'S',color:'#6d5ae0',arrow:true},
+      {label:'PO',who:'John · all',glyph:'P',color:'#c98a18',arrow:true},
+      {label:'Dev',who:'Amelia · all',glyph:'D',color:'#2f6fe0',arrow:true},
+      {label:'QA',who:'Amelia · all',glyph:'Q',color:'#0f9b8e',arrow:false}
+    ] : [
+      {label:'SM',who:'one story',glyph:'S',color:'#6d5ae0',arrow:true},
+      {label:'PO',who:'one story',glyph:'P',color:'#c98a18',arrow:true},
+      {label:'Dev',who:'one story',glyph:'D',color:'#2f6fe0',arrow:true},
+      {label:'QA',who:'one story',glyph:'Q',color:'#0f9b8e',arrow:true},
+      {label:'Commit',who:'git push',glyph:'⎇',color:'#1f8a5b',arrow:false}
+    ];
+    const flowPills=FLOW.map(p=>({...p,bg:this.tint(p.color,.07),border:this.tint(p.color,.22)}));
+
+    const ORDER=['DRAFT','REVISE','READY_FOR_DEV','IN_DEV','PENDING_QA','REFIX','COMPLETED'];
+    const selObj=st.selStory? stories.find(s=>s.id===st.selStory):null;
+    let sel={};
+    if(selObj){ sel={...selObj, machine:ORDER.map(k=>{ const m=this.meta(k); const cur=k===selObj.status; return {key:k, current:cur, dot:m.c, fg:cur?'#1c1c1e':'#9a9a9f', weight:cur?'600':'400', bg:cur?this.tint(m.c,.1):'transparent'}; }) }; }
+
+    return {
+      setCycle:()=>this.setMode('cycle'), setIterative:()=>this.setMode('iterative'),
+      cycleTabBg:isCycle?'#fff':'transparent', cycleTabColor:isCycle?'#1c1c1e':'#9a9a9f', cycleTabShadow:isCycle?'0 1px 2px rgba(40,38,30,.12)':'none',
+      iterTabBg:!isCycle?'#fff':'transparent', iterTabColor:!isCycle?'#1c1c1e':'#9a9a9f', iterTabShadow:!isCycle?'0 1px 2px rgba(40,38,30,.12)':'none',
+      modeTitle:isCycle?'Cycle — batch pipeline':'Iterative — story-by-story',
+      modeCmd:isCycle?'bmadder cycle':'bmadder iterative',
+      modeBody:isCycle
+        ? 'Plan the whole backlog, then move every story through Dev together and QA together. Run the phases below as a batch — failures loop back as REFIX for up to 3 passes.'
+        : 'One story crosses the entire board — SM → PO → Dev → QA → commit — before the next begins. Each story lands as its own deployable commit.',
+      flowPills,
+
+      doPlan:()=>this.doPlan(), doDev:()=>this.doDev(), doQA:()=>this.doQA(),
+      runFull:()=>this.runFull(), runFullLabel:isCycle?'Run cycle':'Run iterative', reset:()=>this.reset(),
+      completedCount, totalCount, donePct:Math.round(completedCount/totalCount*100)+'%',
+
+      columns,
+      showStory:!!selObj, showGuide:!selObj, sel, clearSel:()=>this.setState({selStory:null}),
+
+      agents:[ {name:'Amelia',initial:'A',role:'Dev · SM · QA',model:'gpt-5 / sonnet',color:'#2f6fe0'}, {name:'John',initial:'J',role:'Product Owner',model:'sonnet',color:'#c98a18'} ],
+      paths:[ {label:'skills_dir',value:'.agent/skills'}, {label:'headless_dir',value:'scripts/headless-skills'}, {label:'stories_dir',value:'docs/backlog/stories'}, {label:'state_dir',value:'_bmad'}, {label:'prd_file',value:'docs/prd.md'} ],
+
+      showConfig:st.showConfig, openConfig:()=>this.setState({showConfig:true}), closeConfig:()=>this.setState({showConfig:false}), stop:(e)=>{ if(e&&e.stopPropagation)e.stopPropagation(); },
+      cfgModels:[{k:'sonnet',v:'claude-sonnet-4'},{k:'opus',v:'claude-opus-4'},{k:'gpt5',v:'gpt-5'},{k:'gemini_pro',v:'gemini-2.5-pro'},{k:'codex_def',v:'codex-default'}],
+      cfgRoles:[ {role:'sm',personality:'bmad-agent-dev',model:'sonnet',headless:'sm-create-stories.md'}, {role:'sm_single',personality:'bmad-agent-dev',model:'sonnet',headless:'sm-create-story.md'}, {role:'po',personality:'bmad-agent-pm',model:'sonnet',headless:'po-review.md'}, {role:'dev',personality:'bmad-agent-dev',model:'gpt5',headless:'dev-story.md'}, {role:'qa',personality:'bmad-agent-dev',model:'sonnet',headless:'qa-review.md'} ],
+      cfgHints:[{k:'codex',v:'gpt5'},{k:'claude',v:'sonnet'},{k:'gemini',v:'gemini_pro'}],
+      cfgDefaults:[{k:'max_dev_iterations',v:'10'},{k:'max_sm_iterations',v:'5'},{k:'max_qa_passes',v:'3'},{k:'story_timeout_seconds',v:'1800'}]
+    };
+  }
+}
+</script>
+</body>
+</html>

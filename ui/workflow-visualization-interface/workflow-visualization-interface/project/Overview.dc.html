@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{ box-sizing:border-box; }
+  html,body{ margin:0; padding:0; background:#15161a; }
+  a{ text-decoration:none; color:inherit; }
+  ::-webkit-scrollbar{ width:11px; }
+  ::-webkit-scrollbar-thumb{ background:#33353d; border-radius:6px; }
+</style>
+</helmet>
+<div style="min-height:100vh; background:radial-gradient(900px 500px at 80% -5%, #1d2030 0%, #15161a 55%); color:#e6e8ec; font-family:'Space Grotesk',system-ui,sans-serif; padding:54px 32px 70px;">
+  <div style="max-width:1080px; margin:0 auto;">
+
+    <!-- header -->
+    <div style="display:flex; align-items:center; gap:12px; margin-bottom:34px;">
+      <div style="width:34px; height:34px; border-radius:9px; background:linear-gradient(135deg,#7c6cf0,#4c8df6); display:flex; align-items:center; justify-content:center; font-weight:700; color:#fff;">B</div>
+      <span style="font-weight:600; font-size:15px;">BMADder-pi</span>
+      <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#7e8493; background:#23252d; padding:4px 10px; border-radius:20px;">UI exploration · 2 directions</span>
+    </div>
+
+    <h1 style="font-size:42px; font-weight:700; letter-spacing:-1px; line-height:1.08; margin:0 0 16px; max-width:760px;">Two ways to see the pipeline run</h1>
+    <p style="font-size:16px; line-height:1.6; color:#9aa0ab; max-width:680px; margin:0 0 44px;">The orchestrator drives stories through agents from a single Rust binary. Both directions below turn that headless CLI into a visual surface — they teach the <b style="color:#cfd3da;">cycle</b> (batch) and <b style="color:#cfd3da;">iterative</b> (story-by-story) workflows, show stories moving through states live, and expose the agents, routing and <span style="font-family:'IBM Plex Mono',monospace; font-size:14px; color:#a9d3c4;">bmadder.toml</span> config.</p>
+
+    <!-- workflow contrast -->
+    <div style="font-size:11px; letter-spacing:1.6px; text-transform:uppercase; color:#6a707c; font-weight:600; margin-bottom:14px;">The two workflows</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:48px;">
+      <sc-for list="{{ workflows }}" as="w" hint-placeholder-count="2">
+        <div style="background:#1a1c22; border:1px solid #282b33; border-radius:14px; padding:20px 22px;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <span style="font-size:19px; font-weight:700;">{{ w.name }}</span>
+            <span style="font-family:'IBM Plex Mono',monospace; font-size:11px; color:#a89bff; background:#211f37; padding:3px 9px; border-radius:20px;">{{ w.cmd }}</span>
+          </div>
+          <div style="color:#9aa0ab; font-size:13.5px; line-height:1.55; margin-top:9px;">{{ w.body }}</div>
+          <div style="height:1px; background:#282b33; margin:16px 0;"></div>
+          <sc-for list="{{ w.points }}" as="p" hint-placeholder-count="3">
+            <div style="display:flex; gap:9px; align-items:flex-start; padding:4px 0; font-size:12.5px; color:#bcc1c9; line-height:1.45;"><span style="color:{{ p.color }}; margin-top:1px;">◆</span><span>{{ p.text }}</span></div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+
+    <!-- direction cards -->
+    <div style="font-size:11px; letter-spacing:1.6px; text-transform:uppercase; color:#6a707c; font-weight:600; margin-bottom:14px;">Pick a direction</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px;">
+
+      <!-- A -->
+      <a href="Flow%20Console.dc.html" style="display:block; background:#1a1c22; border:1px solid #282b33; border-radius:16px; overflow:hidden;" style-hover="border-color:#7c6cf0; transform:translateY(-2px)">
+        <div style="height:172px; background:#0c0d10; border-bottom:1px solid #282b33; padding:18px; position:relative;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:96px; height:11px; border-radius:4px; background:#7c6cf0; opacity:.85;"></div>
+            <div style="flex:1;"></div>
+            <div style="width:42px; height:11px; border-radius:4px; background:#22242b;"></div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px; margin-top:26px;">
+            <sc-for list="{{ aNodes }}" as="n" hint-placeholder-count="3">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <div style="width:62px; height:54px; border-radius:9px; background:{{ n.bg }}; border:1.5px solid {{ n.border }}; padding:7px;">
+                  <div style="font-family:'IBM Plex Mono',monospace; font-size:9px; font-weight:600; color:{{ n.fg }};">{{ n.label }}</div>
+                  <div style="display:flex; gap:3px; margin-top:7px;"><span style="width:13px; height:9px; border-radius:3px; background:{{ n.chip }};"></span><span style="width:13px; height:9px; border-radius:3px; background:{{ n.chip }};"></span></div>
+                </div>
+                <sc-if value="{{ n.arrow }}" hint-placeholder-val="{{ true }}"><span style="color:#3a3f48; font-size:11px;">▶</span></sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <div style="position:absolute; bottom:14px; left:18px; right:18px; height:18px; border-radius:5px; background:#0a0b0e; border:1px solid #1c1e24;"></div>
+        </div>
+        <div style="padding:18px 20px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:18px; font-weight:700;">Flow Console</span>
+            <span style="font-size:11px; color:#7e8493; background:#22242b; padding:4px 9px; border-radius:6px;">dark · graph</span>
+          </div>
+          <div style="color:#9aa0ab; font-size:13px; line-height:1.55; margin-top:8px;">A node-graph of the pipeline. Phases light up as the run streams, story chips flow node-to-node, and the activity log scrolls underneath. Drill into any phase or story; toggle cycle/iterative to reshape the graph.</div>
+          <div style="display:flex; align-items:center; gap:7px; margin-top:14px; font-weight:600; color:#a89bff; font-size:13px;">Open prototype →</div>
+        </div>
+      </a>
+
+      <!-- B -->
+      <a href="Mission%20Board.dc.html" style="display:block; background:#1a1c22; border:1px solid #282b33; border-radius:16px; overflow:hidden;" style-hover="border-color:#4f46e5; transform:translateY(-2px)">
+        <div style="height:172px; background:#f4f3ef; border-bottom:1px solid #282b33; padding:16px; display:flex; gap:7px;">
+          <sc-for list="{{ bCols }}" as="c" hint-placeholder-count="5">
+            <div style="flex:1;">
+              <div style="display:flex; align-items:center; gap:4px; margin-bottom:6px;"><span style="width:6px; height:6px; border-radius:50%; background:{{ c.color }};"></span><span style="width:{{ c.w }}; height:6px; border-radius:3px; background:#cbc9c0;"></span></div>
+              <div style="background:#eceae3; border:1px solid #e2e0d8; border-radius:6px; height:120px; padding:5px; display:flex; flex-direction:column; gap:5px;">
+                <sc-for list="{{ c.cards }}" as="k" hint-placeholder-count="0">
+                  <div style="background:#fff; border-left:2px solid {{ c.color }}; border-radius:4px; height:26px; box-shadow:0 1px 1px rgba(0,0,0,.04);"></div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <div style="padding:18px 20px;">
+          <div style="display:flex; align-items:center; justify-content:space-between;">
+            <span style="font-size:18px; font-weight:700;">Mission Board</span>
+            <span style="font-size:11px; color:#7e8493; background:#22242b; padding:4px 9px; border-radius:6px;">light · kanban</span>
+          </div>
+          <div style="color:#9aa0ab; font-size:13px; line-height:1.55; margin-top:8px;">The seven story states as board columns. Run <span style="font-family:'IBM Plex Mono',monospace; font-size:12px; color:#cfd3da;">plan / dev / qa</span> as buttons and watch cards cross — including a QA failure bouncing to REFIX and back. Click any card to see its place in the state machine.</div>
+          <div style="display:flex; align-items:center; gap:7px; margin-top:14px; font-weight:600; color:#8b84ff; font-size:13px;">Open prototype →</div>
+        </div>
+      </a>
+    </div>
+
+    <div style="margin-top:40px; font-size:12px; color:#5c626c; line-height:1.6;">Both prototypes are interactive — click <span style="font-family:'IBM Plex Mono',monospace;">Run</span>, toggle the workflow mode, and open the config. They share the same sample backlog (9 stories across the BMADder-pi build) so you can compare the two surfaces directly.</div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  renderVals(){
+    return {
+      workflows:[
+        {name:'Cycle',cmd:'bmadder cycle',body:'Plans the whole backlog first, then drives every story through Dev together, then QA together — looping REFIX failures back for up to 3 passes.',points:[
+          {color:'#8b7cf0',text:'SM shards the entire PRD into stories in one pass'},
+          {color:'#4c8df6',text:'Full scope visible up front; deployable once all stories pass'},
+          {color:'#3d9a6e',text:'Best for well-defined PRDs known up front'}
+        ]},
+        {name:'Iterative',cmd:'bmadder iterative',body:'Carries one story through its whole lifecycle — SM → PO → Dev → QA → commit — before the SM creates the next.',points:[
+          {color:'#8b7cf0',text:'One story at a time, created in dependency order'},
+          {color:'#3d9a6e',text:'Each story lands as its own deployable commit'},
+          {color:'#e5484d',text:'On crash, resumes at the exact story & cleans orphaned code'}
+        ]}
+      ],
+      aNodes:[
+        {label:'PLAN',fg:'#8b7cf0',bg:'rgba(139,124,240,.1)',border:'#8b7cf0',chip:'#3a3f48',arrow:true},
+        {label:'DEV',fg:'#4c8df6',bg:'#14161b',border:'#21252d',chip:'#2f4a73',arrow:true},
+        {label:'QA',fg:'#2bb3a3',bg:'#14161b',border:'#21252d',chip:'#1f3a35',arrow:false}
+      ],
+      bCols:[
+        {color:'#c98a18',w:'24px',cards:[1,1]},
+        {color:'#2f6fe0',w:'28px',cards:[1,1]},
+        {color:'#2f6fe0',w:'20px',cards:[1]},
+        {color:'#c98a18',w:'26px',cards:[]},
+        {color:'#1f8a5b',w:'30px',cards:[1,1,1]}
+      ]
+    };
+  }
+}
+</script>
+</body>
+</html>

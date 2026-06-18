@@ -1,0 +1,1485 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>BMADder Console</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+        />
+        <style>
+            * {
+                box-sizing: border-box;
+            }
+            html,
+            body {
+                margin: 0;
+                padding: 0;
+                height: 100%;
+                background: #0c0d10;
+                color: #e6e8ec;
+                font-family: "IBM Plex Sans", system-ui, sans-serif;
+                font-size: 13px;
+                overflow: hidden;
+            }
+            button {
+                font: inherit;
+                color: inherit;
+            }
+            ::-webkit-scrollbar {
+                width: 9px;
+                height: 9px;
+            }
+            ::-webkit-scrollbar-thumb {
+                background: #2a2e36;
+                border-radius: 6px;
+            }
+            ::-webkit-scrollbar-track {
+                background: transparent;
+            }
+            @keyframes nodePulse {
+                0% {
+                    box-shadow: 0 0 0 0 rgba(124, 108, 240, 0.5);
+                }
+                70% {
+                    box-shadow: 0 0 0 10px rgba(124, 108, 240, 0);
+                }
+                100% {
+                    box-shadow: 0 0 0 0 rgba(124, 108, 240, 0);
+                }
+            }
+            @keyframes chipPop {
+                from {
+                    transform: scale(0.6);
+                    opacity: 0;
+                }
+                to {
+                    transform: scale(1);
+                    opacity: 1;
+                }
+            }
+            @keyframes cardPop {
+                from {
+                    transform: translateY(6px);
+                    opacity: 0;
+                }
+                to {
+                    transform: none;
+                    opacity: 1;
+                }
+            }
+            .app {
+                position: relative;
+                width: 100%;
+                min-width: 1280px;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                background: #0c0d10;
+                color: #e6e8ec;
+                overflow: hidden;
+            }
+            .top {
+                height: 54px;
+                flex: none;
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                padding: 0 18px;
+                border-bottom: 1px solid #20242c;
+                background: #101216;
+            }
+            .brand {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .logo {
+                width: 26px;
+                height: 26px;
+                border-radius: 7px;
+                background: linear-gradient(135deg, #7c6cf0, #4c8df6);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                font-size: 13px;
+                color: #fff;
+                font-family: "IBM Plex Mono", monospace;
+            }
+            .mono {
+                font-family: "IBM Plex Mono", monospace;
+            }
+            .muted {
+                color: #5c626c;
+            }
+            .tiny {
+                font-size: 10.5px;
+            }
+            .seg {
+                display: flex;
+                gap: 3px;
+                padding: 3px;
+                background: #181b21;
+                border: 1px solid #262a31;
+                border-radius: 9px;
+            }
+            .seg button {
+                display: flex;
+                align-items: center;
+                gap: 7px;
+                padding: 7px 13px;
+                border: 0;
+                border-radius: 6px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 12.5px;
+                background: transparent;
+                color: #8b919c;
+            }
+            .seg button.active {
+                background: #7c6cf0;
+                color: #fff;
+            }
+            .seg.view button.active {
+                background: #2a2e36;
+            }
+            .spacer {
+                flex: 1;
+            }
+            .run-controls {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+            }
+            .btn {
+                height: 34px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 7px;
+                border: 1px solid #2a2e36;
+                border-radius: 8px;
+                cursor: pointer;
+                color: #cfd3da;
+                background: #15171c;
+                font-weight: 500;
+            }
+            .btn.icon {
+                width: 34px;
+            }
+            .btn.run {
+                padding: 0 16px;
+                border: 0;
+                color: #fff;
+                font-weight: 600;
+                background: #7c6cf0;
+            }
+            .body {
+                flex: 1;
+                display: flex;
+                min-height: 0;
+            }
+            .left {
+                width: 248px;
+                flex: none;
+                border-right: 1px solid #20242c;
+                background: #0e0f13;
+                overflow-y: auto;
+                padding: 14px;
+            }
+            .center {
+                flex: 1;
+                min-width: 0;
+                display: flex;
+                flex-direction: column;
+                background: radial-gradient(
+                    1200px 500px at 50% -10%,
+                    #14161d 0%,
+                    #0c0d10 60%
+                );
+            }
+            .right {
+                width: 320px;
+                flex: none;
+                border-left: 1px solid #20242c;
+                background: #0e0f13;
+                overflow-y: auto;
+            }
+            .section-title {
+                font-size: 10px;
+                letter-spacing: 1.4px;
+                text-transform: uppercase;
+                color: #5c626c;
+                font-weight: 600;
+                margin: 2px 0 10px;
+            }
+            .panel {
+                background: #14161b;
+                border: 1px solid #21252d;
+                border-radius: 10px;
+                padding: 10px 11px;
+                margin-bottom: 16px;
+            }
+            .kv {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                gap: 8px;
+                padding: 5px 0;
+                border-bottom: 1px solid #1b1e24;
+            }
+            .kv:last-child {
+                border-bottom: 0;
+            }
+            .pill {
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 10.5px;
+                color: #a9d3c4;
+                background: #13211c;
+                padding: 2px 6px;
+                border-radius: 4px;
+                white-space: nowrap;
+            }
+            .agent {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                background: #14161b;
+                border: 1px solid #21252d;
+                border-radius: 10px;
+                padding: 9px 10px;
+                margin-bottom: 8px;
+            }
+            .avatar {
+                width: 30px;
+                height: 30px;
+                flex: none;
+                border-radius: 8px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 700;
+                color: #fff;
+                font-size: 12px;
+            }
+            .intro {
+                padding: 16px 24px 0;
+            }
+            .intro-wrap {
+                display: flex;
+                align-items: flex-start;
+                gap: 16px;
+                flex-wrap: wrap;
+            }
+            .mode-title {
+                font-size: 18px;
+                font-weight: 700;
+                letter-spacing: 0.2px;
+            }
+            .cmd {
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 11px;
+                color: #a89bff;
+                background: #1d1b33;
+                border: 1px solid #2e2a52;
+                padding: 3px 9px;
+                border-radius: 20px;
+            }
+            .mode-body {
+                color: #9aa0ab;
+                font-size: 13px;
+                line-height: 1.55;
+                margin-top: 7px;
+                max-width: 680px;
+            }
+            .bullets {
+                flex: none;
+                width: 230px;
+                background: #13151a;
+                border: 1px solid #21252d;
+                border-radius: 10px;
+                padding: 11px 13px;
+            }
+            .bullet {
+                display: flex;
+                gap: 8px;
+                align-items: flex-start;
+                padding: 4px 0;
+                font-size: 11.5px;
+                color: #bcc1c9;
+                line-height: 1.4;
+            }
+            .graph {
+                flex: 1;
+                min-height: 0;
+                overflow: auto;
+                padding: 26px 24px 8px;
+            }
+            .phase-row {
+                display: flex;
+                align-items: stretch;
+                gap: 0;
+                flex-wrap: nowrap;
+                min-width: min-content;
+            }
+            .phase {
+                position: relative;
+                flex: none;
+                width: 158px;
+                cursor: pointer;
+                border-radius: 13px;
+                padding: 13px 12px 12px;
+                background: #14161b;
+                border: 1.5px solid #21252d;
+                transition: all 0.2s;
+            }
+            .phase.active {
+                animation: nodePulse 1.6s ease infinite;
+            }
+            .phase-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
+            .dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #3a3f48;
+            }
+            .chips {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 5px;
+                margin-top: 10px;
+                min-height: 26px;
+                align-content: flex-start;
+            }
+            .story-chip {
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 10px;
+                font-weight: 600;
+                padding: 4px 6px;
+                border-radius: 6px;
+                cursor: pointer;
+                animation: chipPop 0.25s ease;
+            }
+            .arrow {
+                flex: none;
+                width: 34px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                position: relative;
+            }
+            .arrow-line {
+                width: 100%;
+                height: 2px;
+                background: #262a31;
+            }
+            .arrow-tip {
+                position: absolute;
+                right: 2px;
+                color: #3a3f48;
+                font-size: 12px;
+            }
+            .done {
+                flex: none;
+                width: 150px;
+                border-radius: 13px;
+                padding: 13px 12px;
+                background: #0f1a15;
+                border: 1.5px dashed #1f3a2e;
+            }
+            .loops {
+                display: flex;
+                gap: 10px;
+                margin-top: 22px;
+                flex-wrap: wrap;
+            }
+            .loop {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                background: #15131a;
+                border: 1px solid #2a2238;
+                border-radius: 8px;
+                padding: 7px 12px;
+            }
+            .board {
+                flex: 1;
+                min-height: 0;
+                overflow: auto;
+                padding: 18px 24px 8px;
+            }
+            .columns {
+                display: flex;
+                gap: 10px;
+                align-items: flex-start;
+                height: 100%;
+            }
+            .column {
+                flex: 1 1 0;
+                min-width: 124px;
+                display: flex;
+                flex-direction: column;
+                max-height: 100%;
+            }
+            .col-head {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 2px 4px 10px;
+            }
+            .lane {
+                flex: 1;
+                min-height: 130px;
+                border-radius: 11px;
+                padding: 8px;
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+                overflow-y: auto;
+            }
+            .card {
+                background: #14161b;
+                border: 1px solid #21252d;
+                border-left: 3px solid #4c8df6;
+                border-radius: 9px;
+                padding: 9px 10px;
+                cursor: pointer;
+                animation: cardPop 0.26s ease;
+            }
+            .log {
+                flex: none;
+                height: 128px;
+                border-top: 1px solid #20242c;
+                background: #0a0b0e;
+                display: flex;
+                flex-direction: column;
+            }
+            .log-head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 7px 16px 4px;
+            }
+            .log-body {
+                flex: 1;
+                overflow-y: auto;
+                padding: 0 16px 10px;
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 11px;
+                line-height: 1.65;
+            }
+            .detail {
+                padding: 16px;
+            }
+            .detail-mini {
+                background: #14161b;
+                border: 1px solid #2a2e36;
+                border-radius: 11px;
+                padding: 13px;
+                margin-bottom: 16px;
+            }
+            .close {
+                cursor: pointer;
+                color: #5c626c;
+                font-size: 16px;
+            }
+            .tag {
+                font-size: 11px;
+                font-weight: 600;
+                padding: 4px 10px;
+                border-radius: 20px;
+            }
+            .file {
+                font-family: "IBM Plex Mono", monospace;
+                font-size: 11px;
+                color: #a9d3c4;
+                padding: 5px 8px;
+                background: #13211c;
+                border-radius: 6px;
+                margin-bottom: 5px;
+                word-break: break-all;
+            }
+            .progress {
+                height: 6px;
+                background: #1b1e24;
+                border-radius: 4px;
+                overflow: hidden;
+            }
+            .progress > span {
+                display: block;
+                height: 100%;
+                background: linear-gradient(90deg, #4c8df6, #2bb3a3);
+            }
+            .sm-row {
+                display: flex;
+                align-items: center;
+                gap: 11px;
+                padding: 7px 10px;
+                border-radius: 9px;
+                margin-bottom: 5px;
+                cursor: pointer;
+            }
+            .modal-backdrop {
+                position: fixed;
+                inset: 0;
+                background: rgba(6, 7, 9, 0.72);
+                backdrop-filter: blur(3px);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 50;
+            }
+            .modal {
+                width: 640px;
+                max-height: 84vh;
+                overflow-y: auto;
+                background: #101216;
+                border: 1px solid #2a2e36;
+                border-radius: 14px;
+                box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6);
+            }
+            .modal-head {
+                position: sticky;
+                top: 0;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 16px 20px;
+                border-bottom: 1px solid #20242c;
+                background: #101216;
+            }
+            .hidden {
+                display: none !important;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="app">
+            <div class="top">
+                <div class="brand">
+                    <div class="logo">B</div>
+                    <div>
+                        <div style="font-weight: 600; letter-spacing: 0.2px">
+                            BMADder
+                        </div>
+                        <div class="mono muted tiny" style="margin-top: 2px">
+                            ~/projects/bmadder-pi
+                        </div>
+                    </div>
+                </div>
+                <div class="seg">
+                    <button id="cycleBtn">
+                        <span class="mono" style="font-size: 11px; opacity: 0.7"
+                            >cycle</span
+                        >Batch</button
+                    ><button id="iterBtn">
+                        <span class="mono" style="font-size: 11px; opacity: 0.7"
+                            >iterative</span
+                        >Story-by-story
+                    </button>
+                </div>
+                <div class="seg view">
+                    <button id="graphBtn"><span>⊹</span>Graph</button
+                    ><button id="boardBtn"><span>▦</span>Board</button>
+                </div>
+                <div class="spacer"></div>
+                <div class="run-controls">
+                    <div
+                        id="progressLabel"
+                        class="mono muted"
+                        style="font-size: 11px; margin-right: 4px"
+                    ></div>
+                    <button id="resetBtn" class="btn icon" title="Reset">
+                        ↺</button
+                    ><button id="stepBtn" class="btn" style="padding: 0 14px">
+                        Step ›</button
+                    ><button id="runBtn" class="btn run">
+                        <span id="runIcon" style="font-size: 11px">▶</span
+                        ><span id="runLabel">Run</span></button
+                    ><button id="configBtn" class="btn icon" title="Config">
+                        ⚙
+                    </button>
+                </div>
+            </div>
+            <div class="body">
+                <aside id="left" class="left"></aside>
+                <main class="center">
+                    <section class="intro" id="intro"></section>
+                    <section id="mainView"></section>
+                    <section class="log">
+                        <div class="log-head">
+                            <span class="section-title" style="margin: 0"
+                                >_bmad/logs/activity.log</span
+                            ><span
+                                id="logCount"
+                                class="mono muted"
+                                style="font-size: 10px"
+                            ></span>
+                        </div>
+                        <div id="logBody" class="log-body"></div>
+                    </section>
+                </main>
+                <aside id="right" class="right"></aside>
+            </div>
+            <div id="modalHost"></div>
+        </div>
+        <script>
+            (() => {
+                const accent = "#7c6cf0";
+                const state = {
+                    mode: "cycle",
+                    view: "graph",
+                    running: false,
+                    idx: -1,
+                    stories: [],
+                    log: [],
+                    status: null,
+                    error: null,
+                    activePhase: null,
+                    selStory: null,
+                    selPhase: null,
+                    showConfig: false,
+                    timer: null,
+                    pollTimer: null,
+                };
+                const $ = (id) => document.getElementById(id);
+                function seed() {
+                    return [
+                        {
+                            id: "STORY-0001",
+                            num: "01",
+                            title: "Story frontmatter parser",
+                            hint: "claude",
+                            status: "COMPLETED",
+                            epic: "EPIC-01 · Core",
+                            summary:
+                                "serde_yaml round-trip parser: frontmatter fences, status enum, body split.",
+                            files: [
+                                "bmadder-core/src/story.rs",
+                                "bmadder-cli/src/story_io.rs",
+                            ],
+                            acDone: 6,
+                            acTotal: 6,
+                        },
+                        {
+                            id: "STORY-0002",
+                            num: "02",
+                            title: "Config loader & TOML",
+                            hint: "claude",
+                            status: "COMPLETED",
+                            epic: "EPIC-01 · Core",
+                            summary:
+                                "Load bmadder.toml, resolve paths relative to config dir, env + CLI overlay.",
+                            files: ["bmadder-core/src/config.rs"],
+                            acDone: 8,
+                            acTotal: 8,
+                        },
+                        {
+                            id: "STORY-0003",
+                            num: "03",
+                            title: "pi.dev agent invocation",
+                            hint: "codex",
+                            status: "COMPLETED",
+                            epic: "EPIC-02 · Agents",
+                            summary:
+                                "Build pi.dev command from [pi_dev] template, spawn, enforce timeout, parse JSON.",
+                            files: ["bmadder-cli/src/agent.rs"],
+                            acDone: 5,
+                            acTotal: 5,
+                        },
+                        {
+                            id: "STORY-0004",
+                            num: "04",
+                            title: "Git integration & snapshots",
+                            hint: "codex",
+                            status: "IN_DEV",
+                            epic: "EPIC-03 · Safety",
+                            summary:
+                                "Pre-dev snapshot, QA-pass commit + push, discard orphaned code on crash.",
+                            files: ["bmadder-cli/src/git.rs"],
+                            acDone: 4,
+                            acTotal: 7,
+                        },
+                        {
+                            id: "STORY-0005",
+                            num: "05",
+                            title: "Sequential dev loop",
+                            hint: "codex",
+                            status: "READY_FOR_DEV",
+                            epic: "EPIC-04 · Phases",
+                            summary:
+                                "Queue READY_FOR_DEV + REFIX, per-story iterations until PENDING_QA.",
+                            files: ["bmadder-cli/src/phases/dev.rs"],
+                            acDone: 0,
+                            acTotal: 5,
+                        },
+                        {
+                            id: "STORY-0006",
+                            num: "06",
+                            title: "QA audit phase",
+                            hint: "claude",
+                            status: "READY_FOR_DEV",
+                            epic: "EPIC-04 · Phases",
+                            summary:
+                                "Audit PENDING_QA stories vs acceptance criteria; enforce PASS/FAIL on disk.",
+                            files: ["bmadder-cli/src/phases/qa.rs"],
+                            acDone: 0,
+                            acTotal: 4,
+                        },
+                        {
+                            id: "STORY-0007",
+                            num: "07",
+                            title: "Crash recovery & resume",
+                            hint: "gemini",
+                            status: "REFIX",
+                            epic: "EPIC-03 · Safety",
+                            summary:
+                                "Reset IN_DEV stories, git checkout orphaned code, resume the dependency queue.",
+                            files: ["bmadder-cli/src/phases/iterative.rs"],
+                            acDone: 3,
+                            acTotal: 6,
+                        },
+                        {
+                            id: "STORY-0008",
+                            num: "08",
+                            title: "Logging & activity audit",
+                            hint: "claude",
+                            status: "DRAFT",
+                            epic: "EPIC-05 · Observability",
+                            summary:
+                                "Structured activity.log TSV + append-only progress.txt + colored console status.",
+                            files: ["bmadder-cli/src/logging.rs"],
+                            acDone: 0,
+                            acTotal: 5,
+                        },
+                        {
+                            id: "STORY-0009",
+                            num: "09",
+                            title: "Bootstrap module",
+                            hint: "codex",
+                            status: "DRAFT",
+                            epic: "EPIC-06 · Setup",
+                            summary:
+                                "One-command setup: folders, bmadder.toml, headless skills, git init, tooling check.",
+                            files: ["bmadder-cli/src/bootstrap.rs"],
+                            acDone: 0,
+                            acTotal: 8,
+                        },
+                    ];
+                }
+                async function api(path, options = {}) {
+                    const res = await fetch(path, {
+                        headers: { "Content-Type": "application/json" },
+                        cache: "no-store",
+                        ...options,
+                    });
+                    if (!res.ok) {
+                        let detail = res.statusText;
+                        try {
+                            const err = await res.json();
+                            detail = err.error || detail;
+                        } catch (_) {}
+                        throw new Error(`${res.status} ${detail}`);
+                    }
+                    return res.json();
+                }
+                async function refresh() {
+                    try {
+                        const [status, stories, log] = await Promise.all([
+                            api("/api/status"),
+                            api("/api/stories"),
+                            api("/api/logs/activity?limit=200"),
+                        ]);
+                        state.status = status;
+                        state.stories = stories;
+                        state.log = log;
+                        state.error = null;
+                        render();
+                    } catch (err) {
+                        state.error = err.message || String(err);
+                        render();
+                    }
+                }
+                function startPolling() {
+                    if (state.pollTimer) return;
+                    state.pollTimer = setInterval(refresh, 2000);
+                }
+                function stopPolling() {
+                    if (state.pollTimer) {
+                        clearInterval(state.pollTimer);
+                        state.pollTimer = null;
+                    }
+                }
+                function buildTimeline(mode) {
+                    const S = (id, to, phase) => ({ id, to, phase });
+                    return mode === "cycle"
+                        ? [
+                              S("STORY-0008", "READY_FOR_DEV", "plan"),
+                              S("STORY-0009", "READY_FOR_DEV", "plan"),
+                              S("STORY-0004", "PENDING_QA", "dev"),
+                              S("STORY-0005", "IN_DEV", "dev"),
+                              S("STORY-0005", "PENDING_QA", "dev"),
+                              S("STORY-0006", "IN_DEV", "dev"),
+                              S("STORY-0006", "PENDING_QA", "dev"),
+                              S("STORY-0007", "IN_DEV", "dev"),
+                              S("STORY-0007", "PENDING_QA", "dev"),
+                              S("STORY-0008", "IN_DEV", "dev"),
+                              S("STORY-0008", "PENDING_QA", "dev"),
+                              S("STORY-0009", "IN_DEV", "dev"),
+                              S("STORY-0009", "PENDING_QA", "dev"),
+                              S("STORY-0004", "COMPLETED", "qa"),
+                              S("STORY-0005", "COMPLETED", "qa"),
+                              S("STORY-0006", "COMPLETED", "qa"),
+                              S("STORY-0007", "COMPLETED", "qa"),
+                              S("STORY-0008", "COMPLETED", "qa"),
+                              S("STORY-0009", "REFIX", "qa"),
+                              S("STORY-0009", "IN_DEV", "dev"),
+                              S("STORY-0009", "PENDING_QA", "dev"),
+                              S("STORY-0009", "COMPLETED", "qa"),
+                          ]
+                        : [
+                              S("STORY-0004", "PENDING_QA", "dev"),
+                              S("STORY-0004", "COMPLETED", "qa"),
+                              S("STORY-0004", null, "commit"),
+                              S("STORY-0005", "IN_DEV", "dev"),
+                              S("STORY-0005", "PENDING_QA", "dev"),
+                              S("STORY-0005", "COMPLETED", "qa"),
+                              S("STORY-0005", null, "commit"),
+                              S("STORY-0006", "IN_DEV", "dev"),
+                              S("STORY-0006", "PENDING_QA", "dev"),
+                              S("STORY-0006", "COMPLETED", "qa"),
+                              S("STORY-0006", null, "commit"),
+                              S("STORY-0007", "IN_DEV", "dev"),
+                              S("STORY-0007", "PENDING_QA", "dev"),
+                              S("STORY-0007", "COMPLETED", "qa"),
+                              S("STORY-0007", null, "commit"),
+                              S("STORY-0008", "READY_FOR_DEV", "po"),
+                              S("STORY-0008", "IN_DEV", "dev"),
+                              S("STORY-0008", "PENDING_QA", "dev"),
+                              S("STORY-0008", "COMPLETED", "qa"),
+                              S("STORY-0008", null, "commit"),
+                              S("STORY-0009", "READY_FOR_DEV", "po"),
+                              S("STORY-0009", "IN_DEV", "dev"),
+                              S("STORY-0009", "PENDING_QA", "dev"),
+                              S("STORY-0009", "REFIX", "qa"),
+                              S("STORY-0009", "IN_DEV", "dev"),
+                              S("STORY-0009", "PENDING_QA", "dev"),
+                              S("STORY-0009", "COMPLETED", "qa"),
+                              S("STORY-0009", null, "commit"),
+                          ];
+                }
+                let timeline = buildTimeline(state.mode);
+                const meta = (status) =>
+                    ({
+                        DRAFT: { label: "Draft", color: "#e0a93b" },
+                        REVISE: { label: "Revise", color: "#e0a93b" },
+                        READY_FOR_DEV: {
+                            label: "Ready for dev",
+                            color: "#4c8df6",
+                        },
+                        IN_DEV: { label: "In dev", color: "#4c8df6" },
+                        PENDING_QA: { label: "Pending QA", color: "#e0a93b" },
+                        REFIX: { label: "Refix", color: "#e5484d" },
+                        COMPLETED: { label: "Completed", color: "#3d9a6e" },
+                    })[status] || { label: "Draft", color: "#e0a93b" };
+                const tint = (hex, a) => {
+                    const n = parseInt(hex.slice(1), 16);
+                    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+                };
+                const modelOf = (h) =>
+                    ({
+                        codex: "gpt-5",
+                        claude: "claude-sonnet-4",
+                        gemini: "gemini-2.5-pro",
+                    })[h] || "gpt-5";
+                const hintColor = (h) =>
+                    h === "codex"
+                        ? "#4c8df6"
+                        : h === "gemini"
+                          ? "#2bb3a3"
+                          : "#a89bff";
+                const esc = (s) =>
+                    String(s).replace(
+                        /[&<>"']/g,
+                        (c) =>
+                            ({
+                                "&": "&amp;",
+                                "<": "&lt;",
+                                ">": "&gt;",
+                                '"': "&quot;",
+                                "'": "&#39;",
+                            })[c],
+                    );
+                function enriched() {
+                    return state.stories.map((s) => {
+                        const m = meta(s.status),
+                            hc = hintColor(s.hint);
+                        return {
+                            ...s,
+                            statusLabel: m.label,
+                            color: m.color,
+                            chipBg: tint(m.color, 0.13),
+                            chipBorder: tint(m.color, 0.4),
+                            hintColor: hc,
+                            hintBg: tint(hc, 0.13),
+                            avatar: "A",
+                            avatarBg: "#4c8df6",
+                            persona: "Amelia",
+                            model: s.model || modelOf(s.hint),
+                            acLabel: `${s.acDone || 0}/${s.acTotal || 0} AC`,
+                            acPct: `${s.acTotal ? Math.round(((s.acDone || 0) / s.acTotal) * 100) : 0}%`,
+                        };
+                    });
+                }
+                function phases(stories) {
+                    const cycle = state.mode === "cycle";
+                    const PH = cycle
+                        ? [
+                              {
+                                  key: "plan",
+                                  label: "PLAN",
+                                  sub: "SM + PO · batch",
+                                  persona: "Amelia → John",
+                                  color: "#8b7cf0",
+                                  glyph: "P",
+                                  headless: "sm-create-stories.md",
+                                  model: "claude-sonnet-4",
+                                  desc: "The Scrum Master shards the entire PRD into story files in one pass, then the Product Owner reviews every DRAFT at once against an 8-point checklist — approving to READY_FOR_DEV or bouncing to REVISE.",
+                              },
+                              {
+                                  key: "dev",
+                                  label: "DEV",
+                                  sub: "all stories",
+                                  persona: "Amelia",
+                                  color: "#4c8df6",
+                                  glyph: "D",
+                                  headless: "dev-story.md",
+                                  model: "gpt-5",
+                                  desc: "A sequential loop over every READY_FOR_DEV and REFIX story. Each runs fresh-context TDD — failing tests first, then build/test/lint feedback loops — until it reaches PENDING_QA.",
+                              },
+                              {
+                                  key: "qa",
+                                  label: "QA",
+                                  sub: "all stories",
+                                  persona: "Amelia · QA",
+                                  color: "#2bb3a3",
+                                  glyph: "Q",
+                                  headless: "qa-review.md",
+                                  model: "claude-sonnet-4",
+                                  desc: "Audits every PENDING_QA story against its acceptance criteria and checks for regressions. PASS → COMPLETED + commit; FAIL → REFIX, sent back into the dev queue for the next pass.",
+                              },
+                          ]
+                        : [
+                              {
+                                  key: "sm",
+                                  label: "SM",
+                                  sub: "create one",
+                                  persona: "Amelia",
+                                  color: "#8b7cf0",
+                                  glyph: "S",
+                                  headless: "sm-create-story.md",
+                                  model: "claude-sonnet-4",
+                                  desc: "Reads the PRD, architecture, progress log and git history, then creates exactly ONE story — the next unimplemented, dependency-ordered increment. Writes ALL_DONE when the PRD is fully built.",
+                              },
+                              {
+                                  key: "po",
+                                  label: "PO",
+                                  sub: "review one",
+                                  persona: "John",
+                                  color: "#e0a93b",
+                                  glyph: "P",
+                                  headless: "po-review.md",
+                                  model: "claude-sonnet-4",
+                                  desc: "Reviews that single story against the quality checklist. Approves to READY_FOR_DEV, or returns it to the SM as REVISE with specific notes — looping until it passes or hits the iteration cap.",
+                              },
+                              {
+                                  key: "dev",
+                                  label: "DEV",
+                                  sub: "implement",
+                                  persona: "Amelia",
+                                  color: "#4c8df6",
+                                  glyph: "D",
+                                  headless: "dev-story.md",
+                                  model: "gpt-5",
+                                  desc: "Implements the one approved story with TDD and build/test/lint loops until PENDING_QA. Runs at the agent_hint model — codex, claude or gemini — set on the story.",
+                              },
+                              {
+                                  key: "qa",
+                                  label: "QA",
+                                  sub: "audit",
+                                  persona: "Amelia · QA",
+                                  color: "#2bb3a3",
+                                  glyph: "Q",
+                                  headless: "qa-review.md",
+                                  model: "claude-sonnet-4",
+                                  desc: "Audits the story. PASS proceeds to commit; FAIL marks REFIX and loops straight back to Dev for this same story — no other story moves until this one is done.",
+                              },
+                              {
+                                  key: "commit",
+                                  label: "COMMIT",
+                                  sub: "git push",
+                                  persona: "Orchestrator",
+                                  color: "#3d9a6e",
+                                  glyph: "⎇",
+                                  headless: "—",
+                                  model: "git",
+                                  desc: "On QA PASS the orchestrator commits and pushes this story as its own deployable increment — story(STORY-NNNN): title [QA PASS] — then the SM is asked for the next one.",
+                              },
+                          ];
+                    const map = cycle
+                        ? {
+                              DRAFT: "plan",
+                              REVISE: "plan",
+                              READY_FOR_DEV: "dev",
+                              IN_DEV: "dev",
+                              REFIX: "dev",
+                              PENDING_QA: "qa",
+                          }
+                        : {
+                              DRAFT: "sm",
+                              REVISE: "sm",
+                              READY_FOR_DEV: "dev",
+                              IN_DEV: "dev",
+                              REFIX: "dev",
+                              PENDING_QA: "qa",
+                          };
+                    return PH.map((p, i) => ({
+                        ...p,
+                        stories: stories.filter((s) => map[s.status] === p.key),
+                        showArrow: i < PH.length - 1,
+                    }));
+                }
+                function selectStory(id) {
+                    state.selStory = id;
+                    state.selPhase = null;
+                    render();
+                }
+                function selectPhase(key) {
+                    state.selPhase = key;
+                    state.selStory = null;
+                    render();
+                }
+                function clearSel() {
+                    state.selStory = null;
+                    state.selPhase = null;
+                    render();
+                }
+                function count(k) {
+                    return state.stories.filter((s) => s.status === k).length;
+                }
+                function clock(n) {
+                    const tot = 5 + n * 4,
+                        mm = 30 + Math.floor(tot / 60),
+                        ss = tot % 60;
+                    return `14:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+                }
+                function applyStep(s) {
+                    state.stories = state.stories.map((st) =>
+                        st.id === s.id && s.to ? { ...st, status: s.to } : st,
+                    );
+                    const fail = s.to === "REFIX";
+                    const text =
+                        s.phase === "commit"
+                            ? `GIT    ${s.id} · commit + push`
+                            : `${s.phase.toUpperCase().padEnd(6, " ")}${s.id} → ${s.to}`;
+                    state.log.push({
+                        time: clock(state.log.length),
+                        text,
+                        fail,
+                    });
+                    state.idx++;
+                    state.activePhase = s.phase;
+                    render();
+                }
+                function step() {
+                    const next = timeline[state.idx + 1];
+                    if (!next) {
+                        pause();
+                        return;
+                    }
+                    applyStep(next);
+                }
+                function pause() {
+                    if (state.timer) {
+                        clearInterval(state.timer);
+                        state.timer = null;
+                    }
+                    stopPolling();
+                    state.running = false;
+                    render();
+                }
+                async function run() {
+                    if (state.running) {
+                        pause();
+                        return;
+                    }
+                    state.running = true;
+                    state.error = null;
+                    render();
+                    try {
+                        const command =
+                            state.mode === "cycle" ? "cycle" : "iterative";
+                        const res = await api("/api/run", {
+                            method: "POST",
+                            body: JSON.stringify({ command }),
+                        });
+                        state.log.push({
+                            time: new Date().toISOString(),
+                            text: `UI launched bmadder ${res.command} · pid ${res.pid}`,
+                            fail: false,
+                        });
+                        startPolling();
+                        await refresh();
+                    } catch (err) {
+                        state.running = false;
+                        state.error = err.message || String(err);
+                        render();
+                    }
+                }
+                async function reset() {
+                    pause();
+                    state.idx = -1;
+                    state.activePhase = null;
+                    state.selStory = null;
+                    state.selPhase = null;
+                    await refresh();
+                }
+                function setMode(m) {
+                    pause();
+                    state.mode = m;
+                    timeline = buildTimeline(m);
+                    state.idx = -1;
+                    state.activePhase = null;
+                    state.selStory = null;
+                    state.selPhase = null;
+                    render();
+                }
+                function setView(v) {
+                    state.view = v;
+                    render();
+                }
+                function renderTop() {
+                    $("cycleBtn").classList.toggle(
+                        "active",
+                        state.mode === "cycle",
+                    );
+                    $("iterBtn").classList.toggle(
+                        "active",
+                        state.mode !== "cycle",
+                    );
+                    $("graphBtn").classList.toggle(
+                        "active",
+                        state.view === "graph",
+                    );
+                    $("boardBtn").classList.toggle(
+                        "active",
+                        state.view === "board",
+                    );
+                    const total =
+                        state.status?.counts?.total ?? state.stories.length;
+                    $("progressLabel").textContent =
+                        `${total} stories · ${state.status?.project_root || "runtime"}`;
+                    $("runLabel").textContent = state.running
+                        ? "Pause polling"
+                        : "Run";
+                    $("runIcon").textContent = state.running ? "❚❚" : "▶";
+                    $("runBtn").style.background = state.running
+                        ? "#e0a93b"
+                        : accent;
+                }
+                function renderIntro() {
+                    const cycle = state.mode === "cycle";
+                    const bullets = cycle
+                        ? [
+                              [
+                                  "#8b7cf0",
+                                  "Best for well-defined PRDs where full scope is known upfront",
+                              ],
+                              [
+                                  "#4c8df6",
+                                  "Deployable after all stories pass all phases",
+                              ],
+                              ["#3d9a6e", "Git commit after each QA pass"],
+                          ]
+                        : [
+                              [
+                                  "#8b7cf0",
+                                  "SM creates one story at a time, in dependency order",
+                              ],
+                              [
+                                  "#3d9a6e",
+                                  "Each story is its own deployable commit",
+                              ],
+                              [
+                                  "#e5484d",
+                                  "On crash, resumes at the exact story & cleans orphaned code",
+                              ],
+                          ];
+                    $("intro").innerHTML =
+                        `<div class="intro-wrap"><div style="flex:1;min-width:340px"><div style="display:flex;align-items:center;gap:10px"><span class="mode-title">${cycle ? "Cycle — batch pipeline" : "Iterative — story-by-story"}</span><span class="cmd">${cycle ? "bmadder cycle" : "bmadder iterative"}</span></div><div class="mode-body">${cycle ? "Plans the whole backlog first, then drives every story through DEV together, then QA together. The whole PRD’s scope is visible up front; the project is deployable once all stories pass." : "Carries ONE story through its entire lifecycle — SM → PO → Dev → QA → commit — before the SM is asked to create the next. Every story lands as its own deployable, testable commit."}</div></div><div class="bullets">${bullets.map((b) => `<div class="bullet"><span style="color:${b[0]};flex:none;margin-top:1px">◆</span><span>${b[1]}</span></div>`).join("")}</div></div>`;
+                }
+                function renderGraph(stories, phs) {
+                    const done = stories.filter(
+                        (s) => s.status === "COMPLETED",
+                    );
+                    const loopText =
+                        state.mode === "cycle"
+                            ? [
+                                  "QA FAIL → REFIX → re-enters DEV on the next pass (max 3 passes)",
+                              ]
+                            : [
+                                  "PO REVISE → back to SM for this story",
+                                  "QA FAIL → REFIX → back to DEV for this story",
+                              ];
+                    $("mainView").className = "graph";
+                    $("mainView").innerHTML = `<div class="phase-row">${phs
+                        .map((p, i) => {
+                            const active = state.activePhase === p.key,
+                                sel = state.selPhase === p.key;
+                            const bg = active
+                                ? tint(p.color, 0.1)
+                                : sel
+                                  ? "#181b22"
+                                  : "#14161b";
+                            const border = active
+                                ? p.color
+                                : sel
+                                  ? tint(p.color, 0.6)
+                                  : "#21252d";
+                            return `<div class="phase ${active ? "active" : ""}" data-phase="${p.key}" style="background:${bg};border-color:${border};box-shadow:${active ? "0 0 24px " + tint(p.color, 0.35) : "none"}"><div class="phase-head"><span class="mono" style="font-weight:600;font-size:14px;letter-spacing:.5px;color:${active ? p.color : "#cfd3da"}">${p.label}</span><span class="dot" style="background:${active ? p.color : "#3a3f48"}"></span></div><div class="tiny" style="color:#8b919c;margin-top:3px">${p.sub}</div><div style="font-size:10.5px;color:${active ? p.color : "#cfd3da"};margin-top:8px;font-weight:500;opacity:.9">${p.persona}</div><div class="chips">${p.stories.length ? p.stories.map((s) => chip(s)).join("") : '<div style="font-size:10px;color:#3f444d;font-style:italic;padding:5px 2px">idle</div>'}</div></div>${i < phs.length - 1 ? '<div class="arrow"><div class="arrow-line"></div><div class="arrow-tip">▶</div></div>' : ""}`;
+                        })
+                        .join(
+                            "",
+                        )}<div style="flex:none;width:30px"></div><div class="done"><div class="mono" style="font-weight:600;font-size:14px;color:#3d9a6e">DONE ✓</div><div class="tiny" style="color:#5c8a76;margin-top:3px">committed</div><div class="chips">${done.map((s) => `<div class="story-chip" data-story="${s.id}" style="color:#3d9a6e;background:#13211c;border:1px solid #1f3a2e" title="${esc(s.title)}">${s.num}</div>`).join("")}</div></div></div><div class="loops">${loopText.map((t) => `<div class="loop"><span style="color:#e5484d;font-size:13px">↺</span><span style="font-size:11.5px;color:#bcc1c9">${t}</span></div>`).join("")}</div>`;
+                }
+                function chip(s) {
+                    return `<div class="story-chip" data-story="${s.id}" title="${esc(s.title)}" style="color:${s.color};background:${s.chipBg};border:1px solid ${s.chipBorder}">${s.num}</div>`;
+                }
+                function renderBoard(stories) {
+                    const cols = [
+                        ["DRAFT", "#e0a93b", "no drafts"],
+                        ["REVISE", "#e0a93b", "none bounced"],
+                        ["READY_FOR_DEV", "#4c8df6", "queue empty"],
+                        ["IN_DEV", "#4c8df6", "nobody coding"],
+                        ["PENDING_QA", "#e0a93b", "nothing to audit"],
+                        ["REFIX", "#e5484d", "no failures"],
+                        ["COMPLETED", "#3d9a6e", "none done yet"],
+                    ];
+                    $("mainView").className = "board";
+                    $("mainView").innerHTML = `<div class="columns">${cols
+                        .map(([key, color, hint]) => {
+                            const cards = stories.filter(
+                                (s) => s.status === key,
+                            );
+                            return `<div class="column"><div class="col-head"><span style="width:9px;height:9px;border-radius:50%;background:${color}"></span><span class="mono" style="font-size:11px;font-weight:600;color:#cfd3da">${key}</span><span style="font-size:11px;font-weight:700;color:${color};margin-left:auto">${cards.length}</span></div><div class="lane" style="background:${cards.length ? tint(color, 0.05) : "#0e1014"};border:1px solid ${cards.length ? tint(color, 0.22) : "#1b1e24"}">${cards.length ? cards.map(card).join("") : `<div style="text-align:center;padding:14px 4px;font-size:10.5px;color:#3f444d;font-style:italic">${hint}</div>`}</div></div>`;
+                        })
+                        .join("")}</div>`;
+                }
+                function card(c) {
+                    return `<div class="card" data-story="${c.id}" style="border-left-color:${c.color}"><div style="display:flex;align-items:center;justify-content:space-between"><span class="mono" style="font-size:10px;font-weight:600;color:#6a707c">${c.id}</span><span class="mono" style="font-size:9px;font-weight:600;padding:2px 5px;border-radius:4px;color:${c.hintColor};background:${c.hintBg}">${c.hint}</span></div><div style="font-size:12px;font-weight:600;line-height:1.3;margin-top:4px;color:#e6e8ec">${esc(c.title)}</div><div style="display:flex;align-items:center;gap:7px;margin-top:8px"><span style="width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:#fff;background:${c.avatarBg}">${c.avatar}</span><span class="mono" style="font-size:10px;color:#7e8893">${c.model}</span><span style="margin-left:auto;font-size:9.5px;color:#6a707c">${c.acLabel}</span></div></div>`;
+                }
+                function detailStory(s, mini = false) {
+                    return `<div class="${mini ? "detail-mini" : "detail"}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:${mini ? "0" : "14px"}"><span class="${mini ? "mono" : ""}" style="font-size:${mini ? "10.5px" : "10px"};letter-spacing:${mini ? "0" : "1.4px"};text-transform:${mini ? "none" : "uppercase"};color:#8b919c;font-weight:600">${mini ? s.id : "Story"}</span><span class="close" data-clear>×</span></div>${mini ? "" : `<div class="mono" style="font-size:11px;color:#8b919c">${s.id}</div>`}<div style="font-size:${mini ? "14px" : "16px"};font-weight:700;margin-top:4px;line-height:1.3">${esc(s.title)}</div><div style="display:flex;gap:${mini ? "6px" : "8px"};margin-top:${mini ? "9px" : "12px"};flex-wrap:wrap"><span class="tag" style="font-size:${mini ? "10.5px" : "11px"};color:${s.color};background:${s.chipBg};border:1px solid ${s.chipBorder}">${s.statusLabel}</span><span class="tag" style="font-size:${mini ? "10.5px" : "11px"};color:#9aa0ab;background:${mini ? "#1b1e24" : "#15171c"};border:1px solid #262a31">${s.epic}</span></div><div style="color:#9aa0ab;font-size:${mini ? "11.5px" : "12.5px"};line-height:1.55;margin-top:${mini ? "10px" : "14px"}">${esc(s.summary)}</div><div style="display:flex;gap:${mini ? "7px" : "10px"};margin-top:${mini ? "11px" : "16px"}"><div style="flex:1;background:${mini ? "#101216" : "#14161b"};border:1px solid #21252d;border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:#5c626c;text-transform:uppercase;letter-spacing:.8px">Dev agent</div><div style="font-size:12.5px;font-weight:600;margin-top:4px">${s.persona}</div><div class="mono" style="font-size:10.5px;color:#a89bff;margin-top:2px">${s.model}</div></div><div style="flex:1;background:${mini ? "#101216" : "#14161b"};border:1px solid #21252d;border-radius:9px;padding:9px 11px"><div style="font-size:10px;color:#5c626c;text-transform:uppercase;letter-spacing:.8px">agent_hint</div><div class="mono" style="font-size:12.5px;font-weight:600;margin-top:4px;color:#cfd3da">${s.hint}</div></div></div><div class="section-title" style="margin:18px 0 8px">Acceptance criteria · ${s.acLabel}</div><div class="progress"><span style="width:${s.acPct}"></span></div><div class="section-title" style="margin:18px 0 8px">Files touched</div>${s.files.map((f) => `<div class="file">${esc(f)}</div>`).join("")}</div>`;
+                }
+                function detailPhase(p, mini = false) {
+                    return `<div class="${mini ? "detail-mini" : "detail"}"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"><span class="section-title" style="margin:0">Phase</span><span class="close" data-clear>×</span></div><div style="display:flex;align-items:center;gap:10px"><div style="width:38px;height:38px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono';font-weight:700;color:#fff;background:${p.color}">${p.glyph}</div><div><div style="font-size:16px;font-weight:700">${p.label}</div><div style="font-size:11px;color:#8b919c">${p.sub}</div></div></div><div style="color:#9aa0ab;font-size:12.5px;line-height:1.6;margin-top:14px">${p.desc}</div><div style="background:#14161b;border:1px solid #21252d;border-radius:9px;padding:11px 13px;margin-top:16px"><div class="kv"><span style="color:#8b919c;font-size:11.5px">Persona</span><span style="font-size:11.5px;font-weight:600">${p.persona}</span></div><div class="kv"><span style="color:#8b919c;font-size:11.5px">Model</span><span class="mono" style="font-size:11px;color:#a89bff">${p.model}</span></div><div class="kv"><span style="color:#8b919c;font-size:11.5px">Headless skill</span><span class="mono" style="font-size:10.5px;color:#a9d3c4">${p.headless}</span></div></div></div>`;
+                }
+                function renderLeft(stories, phs) {
+                    const sel = stories.find((s) => s.id === state.selStory),
+                        ph = phs.find((p) => p.key === state.selPhase);
+                    $("left").innerHTML =
+                        `${state.view === "board" && sel ? detailStory(sel, true) : ""}${state.view === "board" && ph && !sel ? detailPhase(ph, true) : ""}<div class="section-title">Workspace</div><div class="panel">${[
+                            ["skills_dir", ".agent/skills"],
+                            ["headless_dir", "scripts/headless-skills"],
+                            ["stories_dir", "docs/backlog/stories"],
+                            ["state_dir", "_bmad"],
+                            ["prd_file", "docs/prd.md"],
+                            ["architecture", "docs/architecture.md"],
+                        ]
+                            .map(
+                                (p) =>
+                                    `<div class="kv"><span style="color:#8b919c;font-size:11px">${p[0]}</span><span class="pill">${p[1]}</span></div>`,
+                            )
+                            .join(
+                                "",
+                            )}</div><div class="section-title">Agents · pi.dev</div>${[
+                            [
+                                "Amelia",
+                                "A",
+                                "Dev · SM · QA",
+                                "gpt-5 / sonnet",
+                                "#4c8df6",
+                            ],
+                            ["John", "J", "Product Owner", "sonnet", "#e0a93b"],
+                        ]
+                            .map(
+                                (a) =>
+                                    `<div class="agent"><div class="avatar" style="background:${a[4]}">${a[1]}</div><div style="min-width:0;flex:1"><div style="font-weight:600;font-size:12.5px">${a[0]}</div><div class="tiny" style="color:#8b919c;margin-top:1px">${a[2]}</div></div><div class="mono" style="font-size:9.5px;color:#cfd3da;background:#1c2027;padding:3px 6px;border-radius:5px;text-align:right">${a[3]}</div></div>`,
+                            )
+                            .join(
+                                "",
+                            )}<div style="font-size:10.5px;color:#5c626c;margin-top:4px;line-height:1.5">+ Winston, Mary, Paige, Sally available in <span class="mono" style="color:#7e8893">.agent/skills</span></div><div class="section-title" style="margin-top:18px">Routing</div><div class="panel">${[
+                            ["plan", "claude-sonnet-4"],
+                            ["dev", "gpt-5"],
+                            ["qa", "claude-sonnet-4"],
+                        ]
+                            .map(
+                                (r) =>
+                                    `<div class="kv"><span class="mono" style="font-size:11px;color:#8b919c">${r[0]}</span><span style="font-size:11px;color:#cfd3da">→ ${r[1]}</span></div>`,
+                            )
+                            .join("")}</div>`;
+                }
+                function renderRight(stories, phs) {
+                    $("right").classList.toggle(
+                        "hidden",
+                        state.view !== "graph",
+                    );
+                    if (state.view !== "graph") return;
+                    const sel = stories.find((s) => s.id === state.selStory),
+                        ph = phs.find((p) => p.key === state.selPhase);
+                    if (sel) {
+                        $("right").innerHTML = detailStory(sel);
+                        return;
+                    }
+                    if (ph) {
+                        $("right").innerHTML = detailPhase(ph);
+                        return;
+                    }
+                    const rows = [
+                        "DRAFT",
+                        "REVISE",
+                        "READY_FOR_DEV",
+                        "IN_DEV",
+                        "PENDING_QA",
+                        "REFIX",
+                        "COMPLETED",
+                    ]
+                        .map((k) => {
+                            const m = meta(k),
+                                c = count(k),
+                                desc = {
+                                    DRAFT: "SM created, awaiting PO",
+                                    REVISE: "PO rejected, SM must fix",
+                                    READY_FOR_DEV: "PO approved, queued",
+                                    IN_DEV: "Dev actively working",
+                                    PENDING_QA: "Dev done, awaiting QA",
+                                    REFIX: "QA failed, back to dev",
+                                    COMPLETED: "QA passed, committed",
+                                }[k];
+                            return `<div class="sm-row" data-status="${k}" style="background:${c ? tint(m.color, 0.08) : "#101216"};border:1px solid ${c ? tint(m.color, 0.28) : "#1b1e24"}"><span style="width:9px;height:9px;border-radius:50%;flex:none;background:${m.color}"></span><div style="flex:1;min-width:0"><div class="mono" style="font-size:11px;font-weight:600;color:${c ? "#e6e8ec" : "#7e8893"}">${k}</div><div style="font-size:10.5px;color:#7e8893;margin-top:1px">${desc}</div></div><span class="mono" style="font-size:12px;font-weight:700;color:${m.color}">${c}</span></div>`;
+                        })
+                        .join("");
+                    $("right").innerHTML =
+                        `<div class="detail"><div class="section-title">Story state machine</div>${rows}<div style="margin-top:14px;background:#14161b;border:1px solid #21252d;border-radius:9px;padding:11px 13px"><div style="font-size:11px;color:#8b919c;line-height:1.6"><span style="color:#e0a93b">REVISE</span> sends a story back to the SM · <span style="color:#e5484d">REFIX</span> returns it to the dev queue. The orchestrator reads status from disk after every agent run — it never trusts the agent's word.</div></div><div style="margin-top:12px;display:flex;gap:10px"><div style="flex:1;background:#14161b;border:1px solid #21252d;border-radius:9px;padding:11px 13px;text-align:center"><div style="font-size:22px;font-weight:700;color:#3d9a6e">${count("COMPLETED")}</div><div class="tiny" style="color:#7e8893;margin-top:2px">completed</div></div><div style="flex:1;background:#14161b;border:1px solid #21252d;border-radius:9px;padding:11px 13px;text-align:center"><div style="font-size:22px;font-weight:700;color:#cfd3da">${state.stories.length}</div><div class="tiny" style="color:#7e8893;margin-top:2px">total stories</div></div></div></div>`;
+                }
+                function renderLog() {
+                    $("logCount").textContent = `${state.log.length} events`;
+                    const error = state.error
+                        ? `<div style="color:#e5484d;font-weight:600;margin-bottom:8px">UI error: ${esc(state.error)}</div>`
+                        : "";
+                    $("logBody").innerHTML =
+                        error +
+                        (state.log.length
+                            ? state.log
+                                  .map(
+                                      (e) =>
+                                          `<div style="display:flex;gap:12px"><span style="color:#454b54">${esc(e.time)}</span><span style="color:${e.fail ? "#e5484d" : "#9aa0ab"};font-weight:500">${esc(e.text)}</span></div>`,
+                                  )
+                                  .join("")
+                            : '<div style="color:#3f444d;font-style:italic">— connected to the BMADder runtime · press Run to launch the selected pipeline —</div>');
+                }
+                function renderModal() {
+                    if (!state.showConfig) {
+                        $("modalHost").innerHTML = "";
+                        return;
+                    }
+                    const cfg = state.status || {};
+                    const models = Object.entries(cfg.models || {});
+                    const roles = Object.entries(cfg.roles || {});
+                    const hints = Object.entries(cfg.agent_hints || {});
+                    const defaults = Object.entries(cfg.defaults || {});
+                    const paths = Object.entries(cfg.paths || {});
+                    $("modalHost").innerHTML =
+                        `<div class="modal-backdrop" id="modalBackdrop"><div class="modal" id="modal"><div class="modal-head"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px;font-weight:700">bmadder.toml</span><span class="mono muted tiny">${esc(cfg.project_root || "project root")}</span></div><span class="close" id="modalClose" style="font-size:20px">×</span></div><div style="padding:18px 20px"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[models]</div><div class="panel">${models.length ? models.map(([k, v]) => `<div class="kv mono" style="font-size:11.5px"><span style="color:#cfd3da">${esc(k)}</span><span style="color:#a9d3c4">&quot;${esc(v)}&quot;</span></div>`).join("") : `<div class="muted tiny">No models configured.</div>`}</div><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[roles.*]</div><div class="panel" style="padding:0;overflow:hidden"><div style="display:flex;padding:8px 12px;font-size:10px;color:#5c626c;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #21252d"><span style="flex:1">role</span><span style="flex:1.4">personality</span><span style="flex:.9">model</span><span style="flex:1.6">headless</span></div>${roles.length ? roles.map(([k, r]) => `<div class="mono" style="display:flex;padding:8px 12px;font-size:11px;border-bottom:1px solid #1b1e24;align-items:center"><span style="flex:1;color:#e6e8ec;font-weight:600">${esc(k)}</span><span style="flex:1.4;color:#a9d3c4">${esc(r.personality)}</span><span style="flex:.9;color:#a89bff" title="${esc(r.resolved_model)}">${esc(r.model)}</span><span style="flex:1.6;color:#8b919c">${esc(r.headless)}</span></div>`).join("") : `<div style="padding:12px" class="muted tiny">No roles configured.</div>`}</div><div style="display:flex;gap:16px"><div style="flex:1"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[agent_hints]</div><div class="panel">${hints.length ? hints.map(([k, v]) => `<div class="kv mono" style="font-size:11.5px"><span style="color:#cfd3da">${esc(k)}</span><span style="color:#a89bff">${esc(v)}</span></div>`).join("") : `<div class="muted tiny">No hints configured.</div>`}</div></div><div style="flex:1"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[defaults]</div><div class="panel">${defaults.map(([k, v]) => `<div class="kv mono" style="font-size:11px"><span style="color:#8b919c">${esc(k)}</span><span style="color:#cfd3da">${esc(v)}</span></div>`).join("")}</div></div></div><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin:14px 0 8px">[paths]</div><div class="panel">${paths.map(([k, v]) => `<div class="kv mono" style="font-size:10.5px;gap:14px"><span style="color:#8b919c">${esc(k)}</span><span style="color:#a9d3c4;text-align:right;overflow:hidden;text-overflow:ellipsis">${esc(v)}</span></div>`).join("")}</div><div style="font-size:11px;color:#5c626c;margin-top:16px;line-height:1.6">This console reads live story state from disk and launches the Rust runtime through <span class="mono" style="color:#cfd3da">POST /api/run</span>.</div></div></div></div>`;
+                }
+                function bindDynamic() {
+                    document.querySelectorAll("[data-story]").forEach(
+                        (el) =>
+                            (el.onclick = (e) => {
+                                e.stopPropagation();
+                                selectStory(el.dataset.story);
+                            }),
+                    );
+                    document
+                        .querySelectorAll("[data-phase]")
+                        .forEach(
+                            (el) =>
+                                (el.onclick = () =>
+                                    selectPhase(el.dataset.phase)),
+                        );
+                    document
+                        .querySelectorAll("[data-clear]")
+                        .forEach((el) => (el.onclick = clearSel));
+                    document.querySelectorAll("[data-status]").forEach(
+                        (el) =>
+                            (el.onclick = () => {
+                                const first = state.stories.find(
+                                    (s) => s.status === el.dataset.status,
+                                );
+                                if (first) selectStory(first.id);
+                            }),
+                    );
+                    const mb = $("modalBackdrop"),
+                        m = $("modal"),
+                        mc = $("modalClose");
+                    if (mb)
+                        mb.onclick = () => {
+                            state.showConfig = false;
+                            render();
+                        };
+                    if (m) m.onclick = (e) => e.stopPropagation();
+                    if (mc)
+                        mc.onclick = () => {
+                            state.showConfig = false;
+                            render();
+                        };
+                }
+                function render() {
+                    const stories = enriched(),
+                        phs = phases(stories);
+                    renderTop();
+                    renderIntro();
+                    state.view === "graph"
+                        ? renderGraph(stories, phs)
+                        : renderBoard(stories);
+                    renderLeft(stories, phs);
+                    renderRight(stories, phs);
+                    renderLog();
+                    renderModal();
+                    bindDynamic();
+                }
+                $("cycleBtn").onclick = () => setMode("cycle");
+                $("iterBtn").onclick = () => setMode("iterative");
+                $("graphBtn").onclick = () => setView("graph");
+                $("boardBtn").onclick = () => setView("board");
+                $("resetBtn").onclick = reset;
+                $("stepBtn").onclick = refresh;
+                $("stepBtn").textContent = "Refresh";
+                $("runBtn").onclick = run;
+                $("configBtn").onclick = () => {
+                    state.showConfig = true;
+                    render();
+                };
+                refresh();
+            })();
+        </script>
+    </body>
+</html>

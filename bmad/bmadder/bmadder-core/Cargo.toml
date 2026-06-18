@@ -1,0 +1,17 @@
+[package]
+name = "bmadder-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+walkdir = "2"
+
+[dev-dependencies]
+tempfile = "3"
