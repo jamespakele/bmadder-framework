@@ -3,20 +3,6 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Walk up from `start_dir` looking for a file at `relative_path`.
-/// Returns the directory containing it, or None.
-pub fn find_project_root(start_dir: &Path, marker_relative: &Path) -> Option<PathBuf> {
-    let mut current = start_dir.to_path_buf();
-    loop {
-        if current.join(marker_relative).exists() {
-            return Some(current);
-        }
-        if !current.pop() {
-            return None;
-        }
-    }
-}
-
 /// Walk up from `start_dir` looking for `bmadder.toml`.
 pub fn find_config(start_dir: &Path) -> Option<PathBuf> {
     let mut current = start_dir.to_path_buf();

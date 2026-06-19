@@ -3,7 +3,6 @@ mod bootstrap;
 mod git;
 mod logging;
 mod phases;
-mod preflight;
 mod prompts;
 mod story_io;
 mod ui;

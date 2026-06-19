@@ -70,6 +70,7 @@ pub fn git_story_commit(
 }
 
 /// Discard uncommitted changes: `git checkout .`.
+#[allow(dead_code)]
 pub fn git_clean_worktree(project_root: &Path) -> Result<(), Box<dyn std::error::Error>> {
     let output = Command::new("git")
         .args(["checkout", "."])
@@ -86,6 +87,7 @@ pub fn git_clean_worktree(project_root: &Path) -> Result<(), Box<dyn std::error:
 }
 
 /// Check if the working tree is clean (no uncommitted changes, no untracked files).
+#[allow(dead_code)]
 pub fn git_is_clean(project_root: &Path) -> bool {
     // Check for uncommitted changes
     let diff = Command::new("git")

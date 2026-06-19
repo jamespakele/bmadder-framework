@@ -137,6 +137,7 @@ impl GeminiBackoff {
     }
 
     /// Return the current backoff duration without modifying it.
+    #[allow(dead_code)]
     pub fn current(&self) -> Duration {
         *self.current.lock().unwrap()
     }
@@ -158,7 +159,6 @@ pub fn is_gemini_rate_limited(stderr: &str, stdout: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn test_rate_limit_detection() {
@@ -186,7 +186,7 @@ mod tests {
     }
 }
 
-/// Build a minimal test Config in a temp dir (legacy format still works).
+#[cfg(test)]
 pub mod utils {
     use std::path::Path;
 
