@@ -1407,8 +1407,82 @@
                     const hints = Object.entries(cfg.agent_hints || {});
                     const defaults = Object.entries(cfg.defaults || {});
                     const paths = Object.entries(cfg.paths || {});
+                    const modelRows = models.length
+                        ? models
+                              .map(
+                                  ([k, v]) =>
+                                      '<div class="kv mono" style="font-size:11.5px"><span style="color:#cfd3da">' +
+                                      esc(k) +
+                                      '</span><span style="color:#a9d3c4">&quot;' +
+                                      esc(v) +
+                                      "&quot;</span></div>",
+                              )
+                              .join("")
+                        : '<div class="muted tiny">No models configured.</div>';
+                    const roleRows = roles.length
+                        ? roles
+                              .map(
+                                  ([k, r]) =>
+                                      '<div class="mono" style="display:flex;padding:8px 12px;font-size:11px;border-bottom:1px solid #1b1e24;align-items:center"><span style="flex:1;color:#e6e8ec;font-weight:600">' +
+                                      esc(k) +
+                                      '</span><span style="flex:1.4;color:#a9d3c4">' +
+                                      esc(r.personality) +
+                                      '</span><span style="flex:.9;color:#a89bff" title="' +
+                                      esc(r.resolved_model) +
+                                      '">' +
+                                      esc(r.model) +
+                                      '</span><span style="flex:1.6;color:#8b919c">' +
+                                      esc(r.skill) +
+                                      "</span></div>",
+                              )
+                              .join("")
+                        : '<div style="padding:12px" class="muted tiny">No roles configured.</div>';
+                    const hintRows = hints.length
+                        ? hints
+                              .map(
+                                  ([k, v]) =>
+                                      '<div class="kv mono" style="font-size:11.5px"><span style="color:#cfd3da">' +
+                                      esc(k) +
+                                      '</span><span style="color:#a89bff">' +
+                                      esc(v) +
+                                      "</span></div>",
+                              )
+                              .join("")
+                        : '<div class="muted tiny">No hints configured.</div>';
+                    const defaultRows = defaults
+                        .map(
+                            ([k, v]) =>
+                                '<div class="kv mono" style="font-size:11px"><span style="color:#8b919c">' +
+                                esc(k) +
+                                '</span><span style="color:#cfd3da">' +
+                                esc(v) +
+                                "</span></div>",
+                        )
+                        .join("");
+                    const pathRows = paths
+                        .map(
+                            ([k, v]) =>
+                                '<div class="kv mono" style="font-size:10.5px;gap:14px"><span style="color:#8b919c">' +
+                                esc(k) +
+                                '</span><span style="color:#a9d3c4;text-align:right;overflow:hidden;text-overflow:ellipsis">' +
+                                esc(v) +
+                                "</span></div>",
+                        )
+                        .join("");
                     $("modalHost").innerHTML =
-                        `<div class="modal-backdrop" id="modalBackdrop"><div class="modal" id="modal"><div class="modal-head"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px;font-weight:700">bmadder.toml</span><span class="mono muted tiny">${esc(cfg.project_root || "project root")}</span></div><span class="close" id="modalClose" style="font-size:20px">×</span></div><div style="padding:18px 20px"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[models]</div><div class="panel">${models.length ? models.map(([k, v]) => `<div class="kv mono" style="font-size:11.5px"><span style="color:#cfd3da">${esc(k)}</span><span style="color:#a9d3c4">&quot;${esc(v)}&quot;</span></div>`).join("") : `<div class="muted tiny">No models configured.</div>`}</div><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[roles.*]</div><div class="panel" style="padding:0;overflow:hidden"><div style="display:flex;padding:8px 12px;font-size:10px;color:#5c626c;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #21252d"><span style="flex:1">role</span><span style="flex:1.4">personality</span><span style="flex:.9">model</span><span style="flex:1.6">headless</span></div>${roles.length ? roles.map(([k, r]) => `<div class="mono" style="display:flex;padding:8px 12px;font-size:11px;border-bottom:1px solid #1b1e24;align-items:center"><span style="flex:1;color:#e6e8ec;font-weight:600">${esc(k)}</span><span style="flex:1.4;color:#a9d3c4">${esc(r.personality)}</span><span style="flex:.9;color:#a89bff" title="${esc(r.resolved_model)}">${esc(r.model)}</span><span style="flex:1.6;color:#8b919c">${esc(r.headless)}</span></div>`).join("") : `<div style="padding:12px" class="muted tiny">No roles configured.</div>`}</div><div style="display:flex;gap:16px"><div style="flex:1"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[agent_hints]</div><div class="panel">${hints.length ? hints.map(([k, v]) => `<div class="kv mono" style="font-size:11.5px"><span style="color:#cfd3da">${esc(k)}</span><span style="color:#a89bff">${esc(v)}</span></div>`).join("") : `<div class="muted tiny">No hints configured.</div>`}</div></div><div style="flex:1"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[defaults]</div><div class="panel">${defaults.map(([k, v]) => `<div class="kv mono" style="font-size:11px"><span style="color:#8b919c">${esc(k)}</span><span style="color:#cfd3da">${esc(v)}</span></div>`).join("")}</div></div></div><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin:14px 0 8px">[paths]</div><div class="panel">${paths.map(([k, v]) => `<div class="kv mono" style="font-size:10.5px;gap:14px"><span style="color:#8b919c">${esc(k)}</span><span style="color:#a9d3c4;text-align:right;overflow:hidden;text-overflow:ellipsis">${esc(v)}</span></div>`).join("")}</div><div style="font-size:11px;color:#5c626c;margin-top:16px;line-height:1.6">This console reads live story state from disk and launches the Rust runtime through <span class="mono" style="color:#cfd3da">POST /api/run</span>.</div></div></div></div>`;
+                        '<div class="modal-backdrop" id="modalBackdrop"><div class="modal" id="modal"><div class="modal-head"><div style="display:flex;align-items:center;gap:10px"><span style="font-size:15px;font-weight:700">bmadder.toml</span><span class="mono muted tiny">' +
+                        esc(cfg.project_root || "project root") +
+                        '</span></div><span class="close" id="modalClose" style="font-size:20px">&times;</span></div><div style="padding:18px 20px"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[models]</div><div class="panel">' +
+                        modelRows +
+                        '</div><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[roles.*]</div><div class="panel" style="padding:0;overflow:hidden"><div style="display:flex;padding:8px 12px;font-size:10px;color:#5c626c;text-transform:uppercase;letter-spacing:.8px;border-bottom:1px solid #21252d"><span style="flex:1">role</span><span style="flex:1.4">personality</span><span style="flex:.9">model</span><span style="flex:1.6">skill</span></div>' +
+                        roleRows +
+                        '</div><div style="display:flex;gap:16px"><div style="flex:1"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[agent_hints]</div><div class="panel">' +
+                        hintRows +
+                        '</div></div><div style="flex:1"><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin-bottom:8px">[defaults]</div><div class="panel">' +
+                        defaultRows +
+                        '</div></div></div><div class="mono" style="font-size:10px;color:#8b7cf0;letter-spacing:1px;margin:14px 0 8px">[paths]</div><div class="panel">' +
+                        pathRows +
+                        '</div><div style="font-size:11px;color:#5c626c;margin-top:16px;line-height:1.6">This console reads live story state from disk and launches the Rust runtime through <span class="mono" style="color:#cfd3da">POST /api/run</span>.</div></div></div></div>';
                 }
                 function bindDynamic() {
                     document.querySelectorAll("[data-story]").forEach(

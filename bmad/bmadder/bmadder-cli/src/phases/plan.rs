@@ -4,7 +4,6 @@ use crate::prompts;
 use crate::story_io;
 use bmadder_core::config::Config;
 use bmadder_core::story::StoryStatus;
-use std::collections::HashMap;
 
 pub fn run_plan(
     config: &Config,
@@ -47,13 +46,26 @@ pub fn run_plan(
             &format!("SM sharding via {}", model),
         )?;
 
-        let prompt = prompts::sm_batch_prompt(true);
-        let vars: HashMap<&str, &str> = HashMap::new();
+        let prompt = prompts::sm_batch_prompt();
+        let files: Vec<String> = prompts::sm_batch_files(config);
+        let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 
         if config.dry_run {
-            logging::info("[DRY RUN] Would invoke SM with pi.dev");
+            logging::info(
+                "[DRY RUN] Would invoke SM with pi --skill bmad-create-epics-and-stories",
+            );
         } else {
-            invoke_agent(config, "sm", &model, &prompt, &vars)?;
+            let result = invoke_agent(
+                config,
+                "sm",
+                &model,
+                &file_refs,
+                &["--system-prompt", &prompt],
+            )?;
+            logging::info(&format!(
+                "SM result: success={} summary={:?}",
+                result.success, result.output_summary
+            ));
         }
         logging::log_activity(config, "SM", "-", "SM_DONE", "Sharding complete")?;
         logging::ok("SM sharding complete.");
@@ -93,12 +105,23 @@ pub fn run_plan(
         )?;
 
         let prompt = prompts::po_batch_prompt();
-        let vars: HashMap<&str, &str> = HashMap::new();
+        let files: Vec<String> = prompts::po_batch_files(config);
+        let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 
         if config.dry_run {
-            logging::info("[DRY RUN] Would invoke PO with pi.dev");
+            logging::info("[DRY RUN] Would invoke PO with pi --skill");
         } else {
-            invoke_agent(config, "po", &model, &prompt, &vars)?;
+            let result = invoke_agent(
+                config,
+                "po",
+                &model,
+                &file_refs,
+                &["--system-prompt", &prompt],
+            )?;
+            logging::info(&format!(
+                "PO result: success={} summary={:?}",
+                result.success, result.output_summary
+            ));
         }
         logging::log_activity(config, "PO", "-", "PO_DONE", "Review complete")?;
         logging::ok("PO review complete.");

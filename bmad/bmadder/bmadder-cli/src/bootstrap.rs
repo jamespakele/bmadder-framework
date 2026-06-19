@@ -101,22 +101,22 @@ gpt5 = "gpt-5"
 [roles.sm]
 personality = "bmad-agent-dev"
 model = "sonnet"
-headless = "sm-create-stories.md"
+skill = "bmad-create-epics-and-stories"
 
 [roles.po]
 personality = "bmad-agent-dev"
 model = "sonnet"
-headless = "po-review.md"
+skill = "bmad-create-epics-and-stories"
 
 [roles.dev]
 personality = "bmad-agent-dev"
 model = "gpt5"
-headless = "dev-story.md"
+skill = "bmad-dev-story"
 
 [roles.qa]
 personality = "bmad-agent-dev"
 model = "sonnet"
-headless = "qa-review.md"
+skill = "bmad-code-review"
 
 [agent_hints]
 codex = "gpt5"
@@ -131,15 +131,14 @@ gemini_cooldown_seconds = 15
 gemini_initial_backoff = 30
 
 [pi_dev]
-command = "pi.dev"
+command = "pi"
 args = [
     "--model", "{model}",
-    "--personality", "{personality}",
-    "--instructions", "{headless}",
-    "--task", "@{prompt_file}",
-    "--workspace", "{workspace}",
-    "--timeout", "{timeout}",
-    "--json-output",
+    "--skill", "{skill}",
+    "--print",
+    "--mode", "json",
+    "--no-session",
+    "--approve",
 ]
 "#;
         fs::write(&config_path, default_config)?;

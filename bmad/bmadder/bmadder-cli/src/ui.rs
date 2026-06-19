@@ -39,7 +39,7 @@ struct UiRole {
     personality: String,
     model: String,
     resolved_model: String,
-    headless: String,
+    skill: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -183,7 +183,7 @@ fn status_payload(config: &Config) -> Result<UiStatus, Box<dyn std::error::Error
                     personality: role.personality.clone(),
                     model: role.model.clone(),
                     resolved_model,
-                    headless: role.headless.clone(),
+                    skill: role.skill.clone(),
                 },
             )
         })

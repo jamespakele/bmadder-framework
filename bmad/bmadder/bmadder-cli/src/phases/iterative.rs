@@ -5,7 +5,6 @@ use crate::prompts;
 use crate::story_io;
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::{Story, StoryStatus};
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub fn run_iterative(
@@ -275,12 +274,19 @@ fn process_sm_po_loop(
         // Step A: SM write/revise
         logging::info("SM: writing/revising story...");
         let sm_prompt = prompts::sm_write_story_prompt(&current);
-        let vars: HashMap<&str, &str> = HashMap::new();
+        let sm_files: Vec<String> = prompts::sm_write_files(config, &current);
+        let sm_refs: Vec<&str> = sm_files.iter().map(|s| s.as_str()).collect();
 
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke SM");
         } else {
-            invoke_agent(config, "sm", &model, &sm_prompt, &vars)?;
+            invoke_agent(
+                config,
+                "sm",
+                &model,
+                &sm_refs,
+                &["--system-prompt", &sm_prompt],
+            )?;
         }
 
         // Step B: PO review (unless skip_po)
@@ -301,11 +307,19 @@ fn process_sm_po_loop(
 
         logging::info("PO: reviewing...");
         let po_prompt = prompts::po_single_prompt(&updated);
+        let po_files: Vec<String> = prompts::po_single_files(config, &updated);
+        let po_refs: Vec<&str> = po_files.iter().map(|s| s.as_str()).collect();
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke PO");
             break;
         }
-        invoke_agent(config, "po", &model, &po_prompt, &vars)?;
+        invoke_agent(
+            config,
+            "po",
+            &model,
+            &po_refs,
+            &["--system-prompt", &po_prompt],
+        )?;
 
         // Check status after PO review
         let after_po = story_io::parse_story_file(&story.path)?;
@@ -377,12 +391,19 @@ fn process_dev_qa_loop(
             }
 
             let dev_prompt = prompts::dev_story_prompt(&current);
-            let vars: HashMap<&str, &str> = HashMap::new();
+            let dev_files: Vec<String> = prompts::dev_story_files(config, &current);
+            let dev_refs: Vec<&str> = dev_files.iter().map(|s| s.as_str()).collect();
 
             if config.dry_run {
                 logging::info("[DRY RUN] Would invoke dev agent");
             } else {
-                invoke_agent(config, "dev", &dev_model, &dev_prompt, &vars)?;
+                invoke_agent(
+                    config,
+                    "dev",
+                    &dev_model,
+                    &dev_refs,
+                    &["--system-prompt", &dev_prompt],
+                )?;
             }
         }
 
@@ -412,14 +433,21 @@ fn process_dev_qa_loop(
         ));
 
         let qa_prompt = prompts::qa_story_prompt(&after_dev);
-        let vars: HashMap<&str, &str> = HashMap::new();
+        let qa_files: Vec<String> = prompts::qa_story_files(config, &after_dev);
+        let qa_refs: Vec<&str> = qa_files.iter().map(|s| s.as_str()).collect();
 
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke QA agent");
             return Ok(true);
         }
 
-        invoke_agent(config, "qa", &qa_model, &qa_prompt, &vars)?;
+        invoke_agent(
+            config,
+            "qa",
+            &qa_model,
+            &qa_refs,
+            &["--system-prompt", &qa_prompt],
+        )?;
 
         // Check QA result
         let after_qa = story_io::parse_story_file(&story.path)?;
@@ -512,14 +540,21 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     )?;
 
     let prompt = prompts::sm_single_prompt();
-    let vars: HashMap<&str, &str> = HashMap::new();
+    let files: Vec<String> = prompts::sm_single_files(config);
+    let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 
     if config.dry_run {
         logging::info("[DRY RUN] Would invoke SM for next story");
         return Ok(None);
     }
 
-    invoke_agent(config, "sm", &model, &prompt, &vars)?;
+    invoke_agent(
+        config,
+        "sm",
+        &model,
+        &file_refs,
+        &["--system-prompt", &prompt],
+    )?;
 
     // Check for ALL_DONE after SM returns
     if check_all_done(config)? {

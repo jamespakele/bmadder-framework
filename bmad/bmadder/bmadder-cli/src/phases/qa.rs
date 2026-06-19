@@ -5,7 +5,6 @@ use crate::prompts;
 use crate::story_io;
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::StoryStatus;
-use std::collections::HashMap;
 
 pub fn run_qa(
     config: &Config,
@@ -54,10 +53,11 @@ pub fn run_qa(
             &format!("QA review via {}", model),
         )?;
 
-        // Build QA prompt
+        // Build QA invocation
         let current_story = story_io::parse_story_file(&story.path)?;
         let prompt = prompts::qa_story_prompt(&current_story);
-        let vars: HashMap<&str, &str> = HashMap::new();
+        let files: Vec<String> = prompts::qa_story_files(config, &current_story);
+        let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke QA agent");
@@ -65,7 +65,13 @@ pub fn run_qa(
             continue;
         }
 
-        invoke_agent(config, "qa", &model, &prompt, &vars)?;
+        invoke_agent(
+            config,
+            "qa",
+            &model,
+            &file_refs,
+            &["--system-prompt", &prompt],
+        )?;
 
         // AFTER agent returns, read status from disk (bash enforcer pattern)
         let updated = story_io::parse_story_file(&story.path)?;

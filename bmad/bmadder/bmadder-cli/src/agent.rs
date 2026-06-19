@@ -1,60 +1,45 @@
-use bmadder_core::agent::AgentResult;
+use crate::logging;
+use bmadder_core::agent::PiDevOutput;
 use bmadder_core::config::Config;
 use regex::Regex;
-use std::collections::HashMap;
-use std::io::Write;
-use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
-/// Build the prompt temp file with variable substitution.
-pub fn build_prompt_file(
-    config: &Config,
-    template: &str,
-    variables: &HashMap<&str, &str>,
-) -> Result<PathBuf, Box<dyn std::error::Error>> {
-    let mut prompt = template.to_string();
-    for (key, val) in variables {
-        prompt = prompt.replace(&format!("{{{}}}", key), val);
-    }
-    let prompt_path = config.prompt_tmp_path();
-    // Ensure parent dir exists
-    if let Some(parent) = prompt_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut f = std::fs::File::create(&prompt_path)?;
-    f.write_all(prompt.as_bytes())?;
-    Ok(prompt_path)
-}
-
-/// Build a pi.dev Command from config template for a given role + prompt file.
-pub fn build_pi_dev_command(
+/// Build a pi Command that loads a skill and processes given input files non-interactively.
+pub fn build_pi_command(
     config: &Config,
     role_key: &str,
     model: &str,
-    prompt_file: &Path,
+    files: &[&str],
+    extra_args: &[&str],
 ) -> Result<Command, Box<dyn std::error::Error>> {
-    let personality = config
-        .resolve_personality_path(role_key)
-        .ok_or_else(|| format!("role '{}' not found in config", role_key))?;
-    let headless = config
-        .resolve_headless_path(role_key)
-        .ok_or_else(|| format!("role '{}' not found in config", role_key))?;
+    let skill_path = config.resolve_skill_path(role_key).ok_or_else(|| {
+        format!(
+            "role '{}': skill directory not found at .agent/skills/{}",
+            role_key,
+            config
+                .roles
+                .get(role_key)
+                .map(|r| r.skill.as_str())
+                .unwrap_or("???")
+        )
+    })?;
 
     let mut cmd = Command::new(&config.pi_dev.command);
     for arg in &config.pi_dev.args {
         let resolved = arg
             .replace("{model}", model)
-            .replace("{personality}", &personality.to_string_lossy())
-            .replace("{headless}", &headless.to_string_lossy())
-            .replace("{prompt_file}", &prompt_file.to_string_lossy())
-            .replace("{workspace}", &config.project_root.to_string_lossy())
-            .replace(
-                "{timeout}",
-                &config.defaults.story_timeout_seconds.to_string(),
-            );
+            .replace("{skill}", &skill_path.to_string_lossy());
         cmd.arg(resolved);
+    }
+    for extra in extra_args {
+        cmd.arg(extra);
+    }
+    // Append file references so pi sees them as initial context
+    for file in files {
+        let path = config.project_root.join(file);
+        cmd.arg(format!("@{}", path.display()));
     }
     cmd.current_dir(&config.project_root);
     cmd.stdin(Stdio::null());
@@ -63,31 +48,68 @@ pub fn build_pi_dev_command(
     Ok(cmd)
 }
 
-/// Invoke pi.dev sub-agent with a given prompt.
+/// Invoke pi with a skill for automatic, non-interactive processing.
+/// The skill is loaded via --skill; context files are passed as @ paths.
+/// Returns the parsed PiDevOutput (JSON mode) or a constructed AgentResult on fallback.
 pub fn invoke_agent(
     config: &Config,
     role_key: &str,
     model: &str,
-    prompt: &str,
-    variables: &HashMap<&str, &str>,
-) -> Result<AgentResult, Box<dyn std::error::Error>> {
-    let prompt_file = build_prompt_file(config, prompt, variables)?;
-    let mut cmd = build_pi_dev_command(config, role_key, model, &prompt_file)?;
+    files: &[&str],
+    extra_args: &[&str],
+) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
+    let mut cmd = build_pi_command(config, role_key, model, files, extra_args)?;
 
     let output = cmd.spawn()?.wait_with_output()?;
 
-    // Try parsing JSON output first
-    if let Ok(pi_dev) = serde_json::from_slice::<bmadder_core::agent::PiDevOutput>(&output.stdout) {
-        return Ok(AgentResult::from_pi_dev(pi_dev));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    // Try parsing JSON output (pi --mode json)
+    if let Ok(parsed) = serde_json::from_str::<PiDevOutput>(stdout.trim()) {
+        if !parsed.success {
+            logging::warn(&format!(
+                "pi {} reported failure: {:?}",
+                role_key,
+                parsed.error.as_deref().unwrap_or("no detail")
+            ));
+        }
+        return Ok(parsed);
     }
 
-    // Fallback: check exit code
-    Ok(AgentResult {
-        success: output.status.success(),
-        exit_code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).to_string(),
-        stderr: String::from_utf8_lossy(&output.stderr).to_string(),
-        timed_out: false,
+    // Fallback: pi may have written JSON to stderr or its output stream
+    if let Ok(parsed) = serde_json::from_str::<PiDevOutput>(stderr.trim()) {
+        if !parsed.success {
+            logging::warn(&format!(
+                "pi {} reported failure (stderr): {:?}",
+                role_key,
+                parsed.error.as_deref().unwrap_or("no detail")
+            ));
+        }
+        return Ok(parsed);
+    }
+
+    // Absolute fallback: treat exit status
+    if !output.status.success() {
+        return Err(format!(
+            "pi {} exited {}: {}",
+            role_key,
+            output.status.code().unwrap_or(-1),
+            stderr.trim()
+        )
+        .into());
+    }
+
+    // Success with unparsable output is fine (might be plain text from skill)
+    Ok(PiDevOutput {
+        success: true,
+        error: None,
+        output_summary: Some(format!(
+            "pi {} completed ({} bytes stdout, {} bytes stderr)",
+            role_key,
+            stdout.len(),
+            stderr.len()
+        )),
     })
 }
 
@@ -136,26 +158,7 @@ pub fn is_gemini_rate_limited(stderr: &str, stdout: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_prompt_variable_substitution() {
-        let dir = tempfile::tempdir().unwrap();
-        let config = crate::agent::utils::make_test_config(dir.path());
-
-        let template = "Story: {story_id}\nFile: @{story_file}\n";
-        let vars: HashMap<&str, &str> = [
-            ("story_id", "STORY-0001"),
-            ("story_file", "docs/backlog/stories/story-0001.md"),
-        ]
-        .iter()
-        .cloned()
-        .collect();
-
-        let path = build_prompt_file(&config, template, &vars).unwrap();
-        let content = std::fs::read_to_string(&path).unwrap();
-        assert!(content.contains("STORY-0001"));
-        assert!(content.contains("story-0001.md"));
-    }
+    use std::path::Path;
 
     #[test]
     fn test_rate_limit_detection() {
@@ -183,9 +186,8 @@ mod tests {
     }
 }
 
-/// Build a minimal test Config in a temp dir.
+/// Build a minimal test Config in a temp dir (legacy format still works).
 pub mod utils {
-
     use std::path::Path;
 
     pub fn make_test_config(dir: &Path) -> bmadder_core::config::Config {
@@ -203,17 +205,17 @@ gpt5 = "gpt-5"
 [roles.sm]
 personality = "bmad-agent-dev"
 model = "sonnet"
-headless = "sm-create-stories.md"
+skill = "bmad-create-epics-and-stories"
 
 [roles.dev]
 personality = "bmad-agent-dev"
 model = "gpt5"
-headless = "dev-story.md"
+skill = "bmad-dev-story"
 
 [roles.qa]
 personality = "bmad-agent-dev"
 model = "sonnet"
-headless = "qa-review.md"
+skill = "bmad-code-review"
 
 [agent_hints]
 codex = "gpt5"

@@ -5,7 +5,6 @@ use crate::prompts;
 use crate::story_io;
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::StoryStatus;
-use std::collections::HashMap;
 
 pub fn run_dev(
     config: &Config,
@@ -83,10 +82,11 @@ pub fn run_dev(
             iterations += 1;
             logging::info(&format!("--- Iteration {}/{} ---", iterations, max_iters));
 
-            // Build dev prompt
+            // Build dev invocation
             let current_story = story_io::parse_story_file(&story.path)?;
             let prompt = prompts::dev_story_prompt(&current_story);
-            let vars: HashMap<&str, &str> = HashMap::new();
+            let files: Vec<String> = prompts::dev_story_files(config, &current_story);
+            let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 
             if config.dry_run {
                 logging::info("[DRY RUN] Would invoke dev agent");
@@ -94,7 +94,13 @@ pub fn run_dev(
                 break;
             }
 
-            let result = invoke_agent(config, "dev", &model, &prompt, &vars)?;
+            let result = invoke_agent(
+                config,
+                "dev",
+                &model,
+                &file_refs,
+                &["--system-prompt", &prompt],
+            )?;
 
             // Read status from disk after agent returns
             let updated = story_io::parse_story_file(&story.path)?;
@@ -115,9 +121,9 @@ pub fn run_dev(
                 }
                 _ => {
                     // Check for Gemini rate limiting and apply cooldown
-                    if is_gemini_rate_limited(&result.stderr, &result.stdout)
-                        && iterations < max_iters
-                    {
+                    let stderr = result.error.as_deref().unwrap_or("");
+                    let stdout = result.output_summary.as_deref().unwrap_or("");
+                    if is_gemini_rate_limited(stderr, stdout) && iterations < max_iters {
                         let cooldown = gemini_backoff.backoff();
                         logging::warn(&format!(
                             "Gemini rate limit detected. Cooling down {:?}...",

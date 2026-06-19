@@ -5,11 +5,8 @@ use std::process::Command;
 pub fn run_preflight(config: &Config) -> Result<(), Box<dyn std::error::Error>> {
     logging::phase_banner("Preflight Checks");
 
-    // 1. Check pi.dev on PATH
-    logging::info(&format!(
-        "Checking pi.dev command: {}",
-        config.pi_dev.command
-    ));
+    // 1. Check pi on PATH
+    logging::info(&format!("Checking pi command: {}", config.pi_dev.command));
     match Command::new(&config.pi_dev.command)
         .arg("--version")
         .output()
@@ -17,21 +14,21 @@ pub fn run_preflight(config: &Config) -> Result<(), Box<dyn std::error::Error>> 
         Ok(output) => {
             if output.status.success() {
                 let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                logging::ok(&format!("pi.dev found: {}", version));
+                logging::ok(&format!("pi found: {}", version));
             } else {
                 logging::warn(&format!(
-                    "pi.dev --version returned non-zero: {}",
+                    "pi --version returned non-zero: {}",
                     String::from_utf8_lossy(&output.stderr).trim()
                 ));
             }
         }
         Err(e) => {
             logging::err(&format!(
-                "pi.dev ('{}') not found on PATH: {}",
+                "pi ('{}') not found on PATH: {}",
                 config.pi_dev.command, e
             ));
             return Err(format!(
-                "pi.dev ('{}') not found on PATH. Please install it.",
+                "pi ('{}') not found on PATH. Please install it.",
                 config.pi_dev.command
             )
             .into());
@@ -50,7 +47,7 @@ pub fn run_preflight(config: &Config) -> Result<(), Box<dyn std::error::Error>> 
     for var in &rogue_vars {
         if std::env::var(var).is_ok() {
             logging::warn(&format!(
-                "Rogue env var '{}' is set. This may interfere with pi.dev model routing.",
+                "Rogue env var '{}' is set. This may interfere with pi model routing.",
                 var
             ));
             found_rogue = true;

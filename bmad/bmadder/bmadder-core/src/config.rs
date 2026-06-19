@@ -20,12 +20,16 @@ fn default_orchestrator_marker() -> PathBuf {
     PathBuf::from("_bmad/orchestrator-master.md")
 }
 
-/// Per-role configuration: which personality, model, and headless skill to use.
+/// Per-role configuration: which personality, model, and skill to use.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RoleConfig {
     pub personality: String,
     pub model: String,
-    pub headless: String,
+    /// BMAD skill directory name under skills_dir (e.g. "bmad-dev-story").
+    pub skill: String,
+    /// Deprecated: headless file reference (ignored when `skill` is set).
+    #[serde(default)]
+    pub headless: Option<String>,
 }
 
 /// Default limits and timing values.
@@ -64,34 +68,30 @@ fn default_gemini_initial_backoff() -> u64 {
     30
 }
 
-/// pi.dev subprocess invocation template.
+/// pi subprocess invocation template.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PiDevConfig {
-    #[serde(default = "default_pi_dev_command")]
+    #[serde(default = "default_pi_command")]
     pub command: String,
-    #[serde(default = "default_pi_dev_args")]
+    #[serde(default = "default_pi_args")]
     pub args: Vec<String>,
 }
 
-fn default_pi_dev_command() -> String {
-    "pi.dev".into()
+fn default_pi_command() -> String {
+    "pi".into()
 }
 
-fn default_pi_dev_args() -> Vec<String> {
+fn default_pi_args() -> Vec<String> {
     vec![
         "--model".into(),
         "{model}".into(),
-        "--personality".into(),
-        "{personality}".into(),
-        "--instructions".into(),
-        "{headless}".into(),
-        "--task".into(),
-        "@{prompt_file}".into(),
-        "--workspace".into(),
-        "{workspace}".into(),
-        "--timeout".into(),
-        "{timeout}".into(),
-        "--json-output".into(),
+        "--skill".into(),
+        "{skill}".into(),
+        "--print".into(),
+        "--mode".into(),
+        "json".into(),
+        "--no-session".into(),
+        "--approve".into(),
     ]
 }
 
@@ -287,6 +287,8 @@ impl Config {
     }
 
     /// Build the absolute path to a personality SKILL.md file.
+    /// When skill-based invocation is used this is informational; the skill
+    /// directory loaded via --skill includes its own SKILL.md.
     pub fn resolve_personality_path(&self, role_key: &str) -> Option<PathBuf> {
         let role = self.roles.get(role_key)?;
         let p = self
@@ -294,13 +296,22 @@ impl Config {
             .skills_dir
             .join(&role.personality)
             .join("SKILL.md");
-        Some(p)
+        if p.exists() {
+            Some(p)
+        } else {
+            None
+        }
     }
 
-    /// Build the absolute path to a headless skill .md file.
-    pub fn resolve_headless_path(&self, role_key: &str) -> Option<PathBuf> {
+    /// Build the absolute path to a skill directory under skills_dir.
+    pub fn resolve_skill_path(&self, role_key: &str) -> Option<PathBuf> {
         let role = self.roles.get(role_key)?;
-        Some(self.paths.headless_dir.join(&role.headless))
+        let p = self.paths.skills_dir.join(&role.skill);
+        if p.exists() {
+            Some(p)
+        } else {
+            None
+        }
     }
 
     /// Path to the prompt temp file.
@@ -383,17 +394,17 @@ gpt5 = "gpt-5"
 [roles.sm]
 personality = "bmad-agent-dev"
 model = "sonnet"
-headless = "sm-create-stories.md"
+skill = "bmad-create-epics-and-stories"
 
 [roles.dev]
 personality = "bmad-agent-dev"
 model = "gpt5"
-headless = "dev-story.md"
+skill = "bmad-dev-story"
 
 [roles.qa]
 personality = "bmad-agent-dev"
 model = "sonnet"
-headless = "qa-review.md"
+skill = "bmad-code-review"
 
 [agent_hints]
 codex = "gpt5"
@@ -489,16 +500,26 @@ claude = "sonnet"
     }
 
     #[test]
-    fn resolve_personality_and_headless_paths() {
+    fn resolve_personality_and_skill_paths() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("bmadder.toml");
         std::fs::write(&config_path, sample_toml()).unwrap();
+
+        // Create the skill dir so resolve_skill_path succeeds
+        std::fs::create_dir_all(dir.path().join(".agent/skills/bmad-dev-story")).unwrap();
+        std::fs::create_dir_all(dir.path().join(".agent/skills/bmad-agent-dev")).unwrap();
+        std::fs::write(
+            dir.path().join(".agent/skills/bmad-agent-dev/SKILL.md"),
+            "# test",
+        )
+        .unwrap();
+
         let config = Config::load(&config_path).unwrap();
 
         let p = config.resolve_personality_path("dev").unwrap();
         assert!(p.ends_with("bmad-agent-dev/SKILL.md"));
 
-        let h = config.resolve_headless_path("dev").unwrap();
-        assert!(h.ends_with("dev-story.md"));
+        let s = config.resolve_skill_path("dev").unwrap();
+        assert!(s.ends_with("bmad-dev-story"));
     }
 }
