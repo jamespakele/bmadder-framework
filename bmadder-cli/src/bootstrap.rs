@@ -37,49 +37,8 @@ Do not edit files here manually unless you know what you're doing.
     fs::write(&marker_path, marker_content)?;
     logging::ok("  Created: _bmad/orchestrator-master.md");
 
-    // Step 3: Headless skills — check scripts/headless-skills/manifest.json
-    logging::info("Step 3/7: Checking headless skills...");
-    let headless_dir = project_dir.join("scripts/headless-skills");
-    let manifest_path = headless_dir.join("manifest.json");
-
-    if manifest_path.exists() {
-        let manifest_content = fs::read_to_string(&manifest_path)?;
-        if let Ok(manifest) = serde_json::from_str::<serde_json::Value>(&manifest_content) {
-            if let Some(files) = manifest.get("files").and_then(|f| f.as_array()) {
-                let mut missing = Vec::new();
-                for entry in files {
-                    if let Some(name) = entry.as_str() {
-                        let skill_path = headless_dir.join(name);
-                        if !skill_path.exists() {
-                            missing.push(name.to_string());
-                        }
-                    }
-                }
-                if missing.is_empty() {
-                    logging::ok(&format!(
-                        "  {} headless skills found and valid.",
-                        files.len()
-                    ));
-                } else {
-                    logging::warn(&format!(
-                        "  {} headless skill(s) missing from manifest: {:?}",
-                        missing.len(),
-                        missing
-                    ));
-                    logging::info("  These will need to be regenerated or placed manually.");
-                }
-            } else {
-                logging::warn("  manifest.json has no 'files' array.");
-            }
-        } else {
-            logging::warn("  Could not parse manifest.json.");
-        }
-    } else {
-        logging::info("  No manifest.json — skipping headless skills check.");
-    }
-
-    // Step 4: Generate bmadder.toml (default template)
-    logging::info("Step 4/7: Configuring bmadder.toml...");
+    // Step 3: Generate bmadder.toml (default template)
+    logging::info("Step 3/6: Configuring bmadder.toml...");
     let config_path = project_dir.join("bmadder.toml");
 
     if config_path.exists() {
@@ -90,7 +49,6 @@ Do not edit files here manually unless you know what you're doing.
 
 [paths]
 skills_dir = ".agent/skills"
-headless_dir = "scripts/headless-skills"
 stories_dir = "docs/backlog/stories"
 state_dir = "_bmad"
 
@@ -183,8 +141,8 @@ args = [
         logging::ok("  Created: .mise.toml");
     }
 
-    // Step 5: Tooling check
-    logging::info("Step 5/7: Checking tooling...");
+    // Step 4: Tooling check
+    logging::info("Step 4/6: Checking tooling...");
 
     // pi.dev --version
     match Command::new("pi.dev").arg("--version").output() {
@@ -211,8 +169,8 @@ args = [
         }
     }
 
-    // Step 6: Git init if needed
-    logging::info("Step 6/7: Git initialization...");
+    // Step 5: Git init if needed
+    logging::info("Step 5/6: Git initialization...");
     let initialized = git::git_init_if_needed(&project_dir)?;
     if initialized {
         logging::ok("  Git repository initialized.");
@@ -220,8 +178,8 @@ args = [
         logging::info("  Git repository already exists.");
     }
 
-    // Step 7: Project files check
-    logging::info("Step 7/7: Checking project files...");
+    // Step 6: Project files check
+    logging::info("Step 6/6: Checking project files...");
     let prd_path = project_dir.join("docs/prd.md");
     let arch_path = project_dir.join("docs/architecture.md");
 

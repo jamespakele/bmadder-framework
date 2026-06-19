@@ -194,7 +194,6 @@ pub mod utils {
         let toml = r#"
 [paths]
 skills_dir = ".agent/skills"
-headless_dir = "scripts/headless-skills"
 stories_dir = "docs/backlog/stories"
 state_dir = "_bmad"
 

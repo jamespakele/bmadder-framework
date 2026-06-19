@@ -7,7 +7,6 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PathsConfig {
     pub skills_dir: PathBuf,
-    pub headless_dir: PathBuf,
     pub stories_dir: PathBuf,
     pub state_dir: PathBuf,
     pub prd_file: PathBuf,
@@ -27,9 +26,6 @@ pub struct RoleConfig {
     pub model: String,
     /// BMAD skill directory name under skills_dir (e.g. "bmad-dev-story").
     pub skill: String,
-    /// Deprecated: headless file reference (ignored when `skill` is set).
-    #[serde(default)]
-    pub headless: Option<String>,
 }
 
 /// Default limits and timing values.
@@ -152,7 +148,6 @@ struct ConfigToml {
 #[derive(Debug, Clone, Default, Deserialize)]
 struct PathsConfigToml {
     skills_dir: Option<String>,
-    headless_dir: Option<String>,
     stories_dir: Option<String>,
     state_dir: Option<String>,
     prd_file: Option<String>,
@@ -185,10 +180,6 @@ impl Config {
 
         let paths = PathsConfig {
             skills_dir: resolve_path(toml.paths.skills_dir.as_deref(), ".agent/skills"),
-            headless_dir: resolve_path(
-                toml.paths.headless_dir.as_deref(),
-                "scripts/headless-skills",
-            ),
             stories_dir: resolve_path(toml.paths.stories_dir.as_deref(), "docs/backlog/stories"),
             state_dir: resolve_path(toml.paths.state_dir.as_deref(), "_bmad"),
             prd_file: resolve_path(toml.paths.prd_file.as_deref(), "docs/prd.md"),
@@ -383,7 +374,6 @@ mod tests {
         r#"
 [paths]
 skills_dir = ".agent/skills"
-headless_dir = "scripts/headless-skills"
 stories_dir = "docs/backlog/stories"
 state_dir = "_bmad"
 

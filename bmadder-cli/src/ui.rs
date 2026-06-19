@@ -10,7 +10,7 @@ use std::path::Path;
 use std::process::Command;
 use tiny_http::{Header, Method, Request, Response, Server, StatusCode};
 
-const INDEX_HTML: &str = include_str!("../../../../ui/workflow-visualization-interface/workflow-visualization-interface/project/BMADder Console.dc.html");
+const INDEX_HTML: &str = include_str!("../../ui/BMADder Console.dc.html");
 
 #[derive(Debug, Serialize)]
 struct UiStatus {
@@ -26,7 +26,6 @@ struct UiStatus {
 #[derive(Debug, Serialize)]
 struct UiPaths {
     skills_dir: String,
-    headless_dir: String,
     stories_dir: String,
     state_dir: String,
     prd_file: String,
@@ -199,7 +198,6 @@ fn status_payload(config: &Config) -> Result<UiStatus, Box<dyn std::error::Error
         counts,
         paths: UiPaths {
             skills_dir: display_path(&config.paths.skills_dir),
-            headless_dir: display_path(&config.paths.headless_dir),
             stories_dir: display_path(&config.paths.stories_dir),
             state_dir: display_path(&config.paths.state_dir),
             prd_file: display_path(&config.paths.prd_file),
