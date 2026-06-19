@@ -144,15 +144,15 @@ args = [
     // Step 4: Tooling check
     logging::info("Step 4/6: Checking tooling...");
 
-    // pi.dev --version
-    match Command::new("pi.dev").arg("--version").output() {
+    // pi --version
+    match Command::new("pi").arg("--version").output() {
         Ok(output) => {
             let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            logging::ok(&format!("  pi.dev: {}", version));
+            logging::ok(&format!("  pi: {}", version));
         }
         Err(e) => {
             logging::warn(&format!(
-                "  pi.dev not found: {}. Install before running pipeline.",
+                "  pi not found: {}. Install before running pipeline.",
                 e
             ));
         }
