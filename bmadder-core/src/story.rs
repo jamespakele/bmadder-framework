@@ -9,6 +9,7 @@ pub enum StoryStatus {
     Revise,
     ReadyForDev,
     InDev,
+    #[serde(rename = "PENDING_QA")]
     PendingQA,
     Refix,
     Completed,
@@ -51,6 +52,7 @@ impl fmt::Display for StoryStatus {
 /// YAML frontmatter parsed from a story file.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoryFrontmatter {
+    #[serde(default)]
     pub story_id: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epic_id: Option<String>,

@@ -186,7 +186,7 @@
 
           <div style="margin-top:16px; background:#eeedfb; border:1px solid #ddd9f7; border-radius:10px; padding:12px 13px;">
             <div style="font-size:12px; font-weight:600; color:#312b8f;">Editable, zero recompile</div>
-            <div style="font-size:11px; color:#5b56a8; line-height:1.55; margin-top:4px;">Personalities live in <span style="font-family:'IBM Plex Mono',monospace;">.agent/skills/</span>, workflows in <span style="font-family:'IBM Plex Mono',monospace;">scripts/headless-skills/</span>, and all routing in <span style="font-family:'IBM Plex Mono',monospace;">bmadder.toml</span>.</div>
+            <div style="font-size:11px; color:#5b56a8; line-height:1.55; margin-top:4px;">Personalities live in <span style="font-family:'IBM Plex Mono',monospace;">.agent/skills/</span>, and all routing in <span style="font-family:'IBM Plex Mono',monospace;">bmadder.toml</span>.</div>
             <div onClick="{{ openConfig }}" style="display:inline-block; margin-top:10px; padding:7px 13px; background:#4f46e5; color:#fff; font-size:11.5px; font-weight:600; border-radius:7px; cursor:pointer;">Open bmadder.toml →</div>
           </div>
         </div>
@@ -250,7 +250,7 @@ class Component extends DCLogic {
       {id:'STORY-0006',num:'06',title:'QA audit phase',hint:'claude',status:'READY_FOR_DEV',epic:'Phases',summary:'Audit PENDING_QA stories vs acceptance criteria; enforce PASS/FAIL on disk.',acDone:0,acTotal:4},
       {id:'STORY-0007',num:'07',title:'Crash recovery & resume',hint:'gemini',status:'REFIX',epic:'Safety',summary:'Reset IN_DEV stories, git checkout orphaned code, resume the dependency queue.',acDone:3,acTotal:6},
       {id:'STORY-0008',num:'08',title:'Logging & activity audit',hint:'claude',status:'DRAFT',epic:'Observability',summary:'Structured activity.log TSV + append-only progress.txt + colored console status.',acDone:0,acTotal:5},
-      {id:'STORY-0009',num:'09',title:'Bootstrap module',hint:'codex',status:'DRAFT',epic:'Setup',summary:'One-command setup: folders, bmadder.toml, headless skills, git init, tooling check.',acDone:0,acTotal:8}
+      {id:'STORY-0009',num:'09',title:'Bootstrap module',hint:'codex',status:'DRAFT',epic:'Setup',summary:'One-command setup: folders, bmadder.toml, git init, tooling check.',acDone:0,acTotal:8}
     ];
   }
 
@@ -333,7 +333,8 @@ class Component extends DCLogic {
 
   meta(s){ const M={DRAFT:{l:'Draft',c:'#c98a18'},REVISE:{l:'Revise',c:'#c98a18'},READY_FOR_DEV:{l:'Ready for dev',c:'#2f6fe0'},IN_DEV:{l:'In dev',c:'#2f6fe0'},PENDING_QA:{l:'Pending QA',c:'#c98a18'},REFIX:{l:'Refix',c:'#d23b3f'},COMPLETED:{l:'Completed',c:'#1f8a5b'}}; return M[s]; }
   tint(hex,a){ const n=parseInt(hex.slice(1),16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
-  modelOf(h){ return {codex:'gpt-5',claude:'claude-sonnet-4',gemini:'gemini-2.5-pro'}[h]||'gpt-5'; }
+  modelOf(h){ const cfg=this.state.cfg||{}; const key=(cfg.agent_hints||{})[h]; if(key) return (cfg.models||{})[key]||key; return (cfg.models||{})[h]||{codex:'gpt-5',claude:'claude-sonnet-4',gemini:'gemini-2.5-pro'}[h]||h; }
+  roleModel(key,fallback){ const role=this.state.cfg&&this.state.cfg.roles&&this.state.cfg.roles[key]; return role?role.resolved_model:(fallback||''); }
 
   renderVals(){
     const st=this.state; const isCycle=st.mode==='cycle';
@@ -398,12 +399,12 @@ class Component extends DCLogic {
       columns,
       showStory:!!selObj, showGuide:!selObj, sel, clearSel:()=>this.setState({selStory:null}),
 
-      agents:[ {name:'Amelia',initial:'A',role:'Dev · SM · QA',model:'gpt-5 / sonnet',color:'#2f6fe0'}, {name:'John',initial:'J',role:'Product Owner',model:'sonnet',color:'#c98a18'} ],
-      paths:[ {label:'skills_dir',value:'.agent/skills'}, {label:'headless_dir',value:'scripts/headless-skills'}, {label:'stories_dir',value:'docs/backlog/stories'}, {label:'state_dir',value:'_bmad'}, {label:'prd_file',value:'docs/prd.md'} ],
+      agents:[ {name:'Amelia',initial:'A',role:'Dev · SM · QA',model:this.roleModel('dev','gpt-5'),color:'#2f6fe0'}, {name:'John',initial:'J',role:'Product Owner',model:this.roleModel('po','claude-sonnet-4'),color:'#c98a18'} ],
+      paths:[ {label:'skills_dir',value:'.agent/skills'}, {label:'stories_dir',value:'docs/backlog/stories'}, {label:'state_dir',value:'_bmad'}, {label:'prd_file',value:'docs/prd.md'} ],
 
       showConfig:st.showConfig, openConfig:()=>this.setState({showConfig:true}), closeConfig:()=>this.setState({showConfig:false}), stop:(e)=>{ if(e&&e.stopPropagation)e.stopPropagation(); },
       cfgModels:[{k:'sonnet',v:'claude-sonnet-4'},{k:'opus',v:'claude-opus-4'},{k:'gpt5',v:'gpt-5'},{k:'gemini_pro',v:'gemini-2.5-pro'},{k:'codex_def',v:'codex-default'}],
-      cfgRoles:[ {role:'sm',personality:'bmad-agent-dev',model:'sonnet',headless:'sm-create-stories.md'}, {role:'sm_single',personality:'bmad-agent-dev',model:'sonnet',headless:'sm-create-story.md'}, {role:'po',personality:'bmad-agent-pm',model:'sonnet',headless:'po-review.md'}, {role:'dev',personality:'bmad-agent-dev',model:'gpt5',headless:'dev-story.md'}, {role:'qa',personality:'bmad-agent-dev',model:'sonnet',headless:'qa-review.md'} ],
+      cfgRoles:[ {role:'sm',personality:'bmad-agent-dev',model:'sonnet'}, {role:'sm_single',personality:'bmad-agent-dev',model:'sonnet'}, {role:'po',personality:'bmad-agent-pm',model:'sonnet'}, {role:'dev',personality:'bmad-agent-dev',model:'gpt5'}, {role:'qa',personality:'bmad-agent-dev',model:'sonnet'} ],
       cfgHints:[{k:'codex',v:'gpt5'},{k:'claude',v:'sonnet'},{k:'gemini',v:'gemini_pro'}],
       cfgDefaults:[{k:'max_dev_iterations',v:'10'},{k:'max_sm_iterations',v:'5'},{k:'max_qa_passes',v:'3'},{k:'story_timeout_seconds',v:'1800'}]
     };

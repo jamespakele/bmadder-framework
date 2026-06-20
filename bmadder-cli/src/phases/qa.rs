@@ -45,6 +45,7 @@ pub fn run_qa(
         let model = config.resolve_model(Phase::QA, None);
         logging::info(&format!("QA agent model: {}", model));
 
+        logging::log_marker(config, "START", &format!("QA:{}", story_id))?;
         logging::log_activity(
             config,
             "ORCH",
@@ -87,6 +88,7 @@ pub fn run_qa(
                     "QA_PASS",
                     "QA review passed, moving to COMPLETED",
                 )?;
+                logging::log_marker(config, "END", &format!("QA:{}", story_id))?;
 
                 // git_story_commit + push (unless no_commit or dry_run)
                 if !no_commit && !config.dry_run {
@@ -108,6 +110,7 @@ pub fn run_qa(
                     "QA_FAIL",
                     "QA review failed, status set to REFIX",
                 )?;
+                logging::log_marker(config, "END", &format!("QA:{}", story_id))?;
                 failed += 1;
             }
             other => {
@@ -125,6 +128,7 @@ pub fn run_qa(
                     "QA_FAIL",
                     &format!("Forced REFIX — ambiguous status {}", other.label()),
                 )?;
+                logging::log_marker(config, "END", &format!("QA:{}", story_id))?;
                 failed += 1;
             }
         }

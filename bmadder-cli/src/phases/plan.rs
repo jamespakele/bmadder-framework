@@ -35,9 +35,14 @@ pub fn run_plan(
             return Err("No DRAFT stories found. Run without --skip-sm first.".into());
         }
         logging::info(&format!("{} existing DRAFT stories found.", drafts));
+    } else if logging::progress_marker_done(config, "PRD_SHARD") {
+        logging::info("PRD sharding already completed (END_PRD_SHARD found). Skipping SM.");
+        let drafts = story_io::count_by_status(&config.paths.stories_dir, StoryStatus::Draft);
+        logging::info(&format!("{} existing DRAFT stories.", drafts));
     } else {
         let model = config.resolve_model(bmadder_core::config::Phase::Plan, None);
         logging::info(&format!("Step 1/2: Scrum Master [{}]", model));
+        logging::log_marker(config, "START", "PRD_SHARD")?;
         logging::log_activity(
             config,
             "ORCH",
@@ -67,6 +72,7 @@ pub fn run_plan(
                 result.success, result.output_summary
             ));
         }
+        logging::log_marker(config, "END", "PRD_SHARD")?;
         logging::log_activity(config, "SM", "-", "SM_DONE", "Sharding complete")?;
         logging::ok("SM sharding complete.");
 
@@ -93,9 +99,12 @@ pub fn run_plan(
             story_io::update_story_field(&story.path, "po_alignment", "APPROVED")?;
         }
         logging::log_activity(config, "ORCH", "-", "PO_SKIP", "All drafts auto-approved")?;
+    } else if logging::progress_marker_done(config, "PO_REVIEW") {
+        logging::info("PO batch review already completed (END_PO_REVIEW found). Skipping.");
     } else {
         let model = config.resolve_model(bmadder_core::config::Phase::Plan, None);
         logging::info(&format!("Step 2/2: Product Owner [{}]", model));
+        logging::log_marker(config, "START", "PO_REVIEW")?;
         logging::log_activity(
             config,
             "ORCH",
@@ -123,6 +132,7 @@ pub fn run_plan(
                 result.success, result.output_summary
             ));
         }
+        logging::log_marker(config, "END", "PO_REVIEW")?;
         logging::log_activity(config, "PO", "-", "PO_DONE", "Review complete")?;
         logging::ok("PO review complete.");
     }

@@ -356,7 +356,7 @@
             </div>
           </div>
 
-          <div style="font-size:11px; color:#5c626c; margin-top:16px; line-height:1.6;">Skills live in <span style="font-family:'IBM Plex Mono',monospace; color:#a9d3c4;">.agent/skills/</span> and headless workflows in <span style="font-family:'IBM Plex Mono',monospace; color:#a9d3c4;">scripts/headless-skills/</span>. Edit either — or any value above — and the next <span style="font-family:'IBM Plex Mono',monospace; color:#cfd3da;">bmadder</span> run picks it up. No rebuild.</div>
+          <div style="font-size:11px; color:#5c626c; margin-top:16px; line-height:1.6;">Skills live in <span style="font-family:'IBM Plex Mono',monospace; color:#a9d3c4;">.agent/skills/</span>. Edit any value above and the next <span style="font-family:'IBM Plex Mono',monospace; color:#cfd3da;">bmadder</span> run picks it up. No rebuild.</div>
         </div>
       </div>
     </div>
@@ -455,7 +455,8 @@ class Component extends DCLogic {
     return M[status]||M.DRAFT;
   }
   tint(hex,a){ const n=parseInt(hex.slice(1),16); const r=(n>>16)&255,g=(n>>8)&255,b=n&255; return 'rgba('+r+','+g+','+b+','+a+')'; }
-  modelOf(hint){ return {codex:'gpt-5',claude:'claude-sonnet-4',gemini:'gemini-2.5-pro'}[hint]||'gpt-5'; }
+  modelOf(hint){ const cfg=this.state.cfg||{}; const key=(cfg.agent_hints||{})[hint]; if(key) return (cfg.models||{})[key]||key; return (cfg.models||{})[hint]||{codex:'gpt-5',claude:'claude-sonnet-4',gemini:'gemini-2.5-pro'}[hint]||hint; }
+  roleModel(key,fallback){ const role=this.state.cfg&&this.state.cfg.roles&&this.state.cfg.roles[key]; return role?role.resolved_model:(fallback||''); }
 
   renderVals(){
     const st=this.state;
@@ -472,15 +473,15 @@ class Component extends DCLogic {
     const stories=st.stories.map(enrich);
 
     const PH = isCycle ? [
-      {key:'plan',label:'PLAN',sub:'SM + PO · batch',persona:'Amelia → John',color:'#8b7cf0',glyph:'P',headless:'sm-create-stories.md',model:'claude-sonnet-4',desc:'The Scrum Master shards the entire PRD into story files in one pass, then the Product Owner reviews every DRAFT at once against an 8-point checklist — approving to READY_FOR_DEV or bouncing to REVISE.'},
-      {key:'dev',label:'DEV',sub:'all stories',persona:'Amelia',color:'#4c8df6',glyph:'D',headless:'dev-story.md',model:'gpt-5',desc:'A sequential loop over every READY_FOR_DEV and REFIX story. Each runs fresh-context TDD — failing tests first, then build/test/lint feedback loops — until it reaches PENDING_QA.'},
-      {key:'qa',label:'QA',sub:'all stories',persona:'Amelia · QA',color:'#2bb3a3',glyph:'Q',headless:'qa-review.md',model:'claude-sonnet-4',desc:'Audits every PENDING_QA story against its acceptance criteria and checks for regressions. PASS → COMPLETED + commit; FAIL → REFIX, sent back into the dev queue for the next pass.'}
+      {key:'plan',label:'PLAN',sub:'SM + PO · batch',persona:'Amelia → John',color:'#8b7cf0',glyph:'P',model:this.roleModel('sm','claude-sonnet-4'),desc:'The Scrum Master shards the entire PRD into story files in one pass, then the Product Owner reviews every DRAFT at once against an 8-point checklist — approving to READY_FOR_DEV or bouncing to REVISE.'},
+      {key:'dev',label:'DEV',sub:'all stories',persona:'Amelia',color:'#4c8df6',glyph:'D',model:this.roleModel('dev','gpt-5'),desc:'A sequential loop over every READY_FOR_DEV and REFIX story. Each runs fresh-context TDD — failing tests first, then build/test/lint feedback loops — until it reaches PENDING_QA.'},
+      {key:'qa',label:'QA',sub:'all stories',persona:'Amelia · QA',color:'#2bb3a3',glyph:'Q',model:this.roleModel('qa','claude-sonnet-4'),desc:'Audits every PENDING_QA story against its acceptance criteria and checks for regressions. PASS → COMPLETED + commit; FAIL → REFIX, sent back into the dev queue for the next pass.'}
     ] : [
-      {key:'sm',label:'SM',sub:'create one',persona:'Amelia',color:'#8b7cf0',glyph:'S',headless:'sm-create-story.md',model:'claude-sonnet-4',desc:'Reads the PRD, architecture, progress log and git history, then creates exactly ONE story — the next unimplemented, dependency-ordered increment. Writes ALL_DONE when the PRD is fully built.'},
-      {key:'po',label:'PO',sub:'review one',persona:'John',color:'#e0a93b',glyph:'P',headless:'po-review.md',model:'claude-sonnet-4',desc:'Reviews that single story against the quality checklist. Approves to READY_FOR_DEV, or returns it to the SM as REVISE with specific notes — looping until it passes or hits the iteration cap.'},
-      {key:'dev',label:'DEV',sub:'implement',persona:'Amelia',color:'#4c8df6',glyph:'D',headless:'dev-story.md',model:'gpt-5',desc:'Implements the one approved story with TDD and build/test/lint loops until PENDING_QA. Runs at the agent_hint model — codex, claude or gemini — set on the story.'},
-      {key:'qa',label:'QA',sub:'audit',persona:'Amelia · QA',color:'#2bb3a3',glyph:'Q',headless:'qa-review.md',model:'claude-sonnet-4',desc:'Audits the story. PASS proceeds to commit; FAIL marks REFIX and loops straight back to Dev for this same story — no other story moves until this one is done.'},
-      {key:'commit',label:'COMMIT',sub:'git push',persona:'Orchestrator',color:'#3d9a6e',glyph:'⎇',headless:'—',model:'git',desc:'On QA PASS the orchestrator commits and pushes this story as its own deployable increment — story(STORY-NNNN): title [QA PASS] — then the SM is asked for the next one.'}
+      {key:'sm',label:'SM',sub:'create one',persona:'Amelia',color:'#8b7cf0',glyph:'S',model:this.roleModel('sm','claude-sonnet-4'),desc:'Reads the PRD, architecture, progress log and git history, then creates exactly ONE story — the next unimplemented, dependency-ordered increment. Writes ALL_DONE when the PRD is fully built.'},
+      {key:'po',label:'PO',sub:'review one',persona:'John',color:'#e0a93b',glyph:'P',model:this.roleModel('po','claude-sonnet-4'),desc:'Reviews that single story against the quality checklist. Approves to READY_FOR_DEV, or returns it to the SM as REVISE with specific notes — looping until it passes or hits the iteration cap.'},
+      {key:'dev',label:'DEV',sub:'implement',persona:'Amelia',color:'#4c8df6',glyph:'D',model:this.roleModel('dev','gpt-5'),desc:'Implements the one approved story with TDD and build/test/lint loops until PENDING_QA. Runs at the agent_hint model — codex, claude or gemini — set on the story.'},
+      {key:'qa',label:'QA',sub:'audit',persona:'Amelia · QA',color:'#2bb3a3',glyph:'Q',model:this.roleModel('qa','claude-sonnet-4'),desc:'Audits the story. PASS proceeds to commit; FAIL marks REFIX and loops straight back to Dev for this same story — no other story moves until this one is done.'},
+      {key:'commit',label:'COMMIT',sub:'git push',persona:'Orchestrator',color:'#3d9a6e',glyph:'⎇',model:'git',desc:'On QA PASS the orchestrator commits and pushes this story as its own deployable increment — story(STORY-NNNN): title [QA PASS] — then the SM is asked for the next one.'}
     ];
 
     const stageMap = isCycle
@@ -559,20 +560,19 @@ class Component extends DCLogic {
       // left rail
       paths:[
         {label:'skills_dir',value:'.agent/skills'},
-        {label:'headless_dir',value:'scripts/headless-skills'},
         {label:'stories_dir',value:'docs/backlog/stories'},
         {label:'state_dir',value:'_bmad'},
         {label:'prd_file',value:'docs/prd.md'},
         {label:'architecture',value:'docs/architecture.md'}
       ],
       agents:[
-        {name:'Amelia',initial:'A',role:'Dev · SM · QA',model:'gpt-5 / sonnet',color:'#4c8df6'},
-        {name:'John',initial:'J',role:'Product Owner',model:'sonnet',color:'#e0a93b'}
+        {name:'Amelia',initial:'A',role:'Dev · SM · QA',model:this.roleModel('dev','gpt-5'),color:'#4c8df6'},
+        {name:'John',initial:'J',role:'Product Owner',model:this.roleModel('po','claude-sonnet-4'),color:'#e0a93b'}
       ],
       routing:[
-        {phase:'plan',model:'claude-sonnet-4'},
-        {phase:'dev',model:'gpt-5'},
-        {phase:'qa',model:'claude-sonnet-4'}
+        {phase:'sm',model:this.roleModel('sm','claude-sonnet-4')},
+        {phase:'dev',model:this.roleModel('dev','gpt-5')},
+        {phase:'qa',model:this.roleModel('qa','claude-sonnet-4')}
       ],
 
       // inspector
@@ -588,11 +588,11 @@ class Component extends DCLogic {
       stop:(e)=>{ if(e&&e.stopPropagation) e.stopPropagation(); },
       cfgModels:[{k:'sonnet',v:'claude-sonnet-4'},{k:'opus',v:'claude-opus-4'},{k:'gpt5',v:'gpt-5'},{k:'gemini_pro',v:'gemini-2.5-pro'},{k:'codex_def',v:'codex-default'}],
       cfgRoles:[
-        {role:'sm',personality:'bmad-agent-dev',model:'sonnet',headless:'sm-create-stories.md'},
-        {role:'sm_single',personality:'bmad-agent-dev',model:'sonnet',headless:'sm-create-story.md'},
-        {role:'po',personality:'bmad-agent-pm',model:'sonnet',headless:'po-review.md'},
-        {role:'dev',personality:'bmad-agent-dev',model:'gpt5',headless:'dev-story.md'},
-        {role:'qa',personality:'bmad-agent-dev',model:'sonnet',headless:'qa-review.md'}
+        {role:'sm',personality:'bmad-agent-dev',model:'sonnet'},
+        {role:'sm_single',personality:'bmad-agent-dev',model:'sonnet'},
+        {role:'po',personality:'bmad-agent-pm',model:'sonnet'},
+        {role:'dev',personality:'bmad-agent-dev',model:'gpt5'},
+        {role:'qa',personality:'bmad-agent-dev',model:'sonnet'}
       ],
       cfgHints:[{k:'codex',v:'gpt5'},{k:'claude',v:'sonnet'},{k:'gemini',v:'gemini_pro'}],
       cfgDefaults:[{k:'max_dev_iterations',v:'10'},{k:'max_sm_iterations',v:'5'},{k:'max_qa_passes',v:'3'},{k:'story_timeout_seconds',v:'1800'}]

@@ -18,7 +18,11 @@ Context files provided: prd.md, architecture.md.
 
 Pipeline rules:
 - Stories go in: docs/backlog/stories/story-NNNN-slug.md
-- Use YAML frontmatter with: status: "DRAFT", po_alignment: "PENDING"
+- Frontmatter MUST include these exact fields (in this order):
+    story_id: "STORY-NNNN"   ← must match the NNNN in the filename
+    title: "..."
+    status: "DRAFT"
+    po_alignment: "PENDING"
 - Each story MUST have sections: Context, Requirements, Acceptance Criteria, Implementation Notes, PO Alignment, QA Notes.
 
 Pre-check:

@@ -43,7 +43,24 @@ pub fn parse_story_file(path: &Path) -> Result<Story, Box<dyn std::error::Error>
     let body = content[header_len + yaml_block_len + closing_fence_len..].to_string();
 
     let yaml_str = yaml_lines.join("\n");
-    let frontmatter: StoryFrontmatter = serde_yaml::from_str(&yaml_str)?;
+    let mut frontmatter: StoryFrontmatter = serde_yaml::from_str(&yaml_str)?;
+
+    // If story_id is missing (LLM wrote `slug` or omitted it), derive from filename.
+    // story-0009-slash-command-palette.md → STORY-0009
+    if frontmatter.story_id.is_empty() {
+        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+            let digits: String = stem
+                .split('-')
+                .find(|part| part.chars().all(|c| c.is_ascii_digit()) && !part.is_empty())
+                .unwrap_or("")
+                .to_string();
+            if !digits.is_empty() {
+                frontmatter.story_id = format!("STORY-{}", digits);
+            } else {
+                frontmatter.story_id = stem.to_uppercase().replace('-', "_");
+            }
+        }
+    }
 
     Ok(Story {
         path: path.to_path_buf(),

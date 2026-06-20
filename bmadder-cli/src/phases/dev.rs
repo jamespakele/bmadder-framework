@@ -65,6 +65,8 @@ pub fn run_dev(
         // Reset Gemini backoff per story
         gemini_backoff.reset();
 
+        logging::log_marker(config, "START", &format!("DEV:{}", story_id))?;
+
         // Set status IN_DEV
         story_io::update_story_status(&story.path, StoryStatus::InDev)?;
         logging::log_activity(
@@ -136,6 +138,7 @@ pub fn run_dev(
         }
 
         if story_done {
+            logging::log_marker(config, "END", &format!("DEV:{}", story_id))?;
             completed += 1;
         } else {
             stalled += 1;

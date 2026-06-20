@@ -19,16 +19,10 @@ pub fn run_cycle(
     let needs_plan = ready == 0 && refix == 0;
 
     if needs_plan {
-        // Smart SM skip: if DRAFTs exist and no REVISE, skip SM
-        let drafts = story_io::count_by_status(&config.paths.stories_dir, StoryStatus::Draft);
-        let revise = story_io::count_by_status(&config.paths.stories_dir, StoryStatus::Revise);
-
-        let sm_skip = skip_sm || (drafts > 0 && revise == 0);
-        let effective_skip_sm = sm_skip;
-        let effective_skip_po = skip_po;
-
         logging::info("No READY_FOR_DEV or REFIX stories. Running plan phase...");
-        plan::run_plan(config, effective_skip_sm, effective_skip_po)?;
+        // Always run SM — the SM prompt already skips existing stories and fills gaps.
+        // Forcing skip here loses partial sharding runs.
+        plan::run_plan(config, skip_sm, skip_po)?;
     } else {
         logging::info(&format!(
             "{} READY_FOR_DEV, {} REFIX stories — skipping plan.",

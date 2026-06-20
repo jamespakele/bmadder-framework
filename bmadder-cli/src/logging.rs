@@ -45,6 +45,39 @@ pub fn log_progress(config: &Config, message: &str) -> Result<(), Box<dyn std::e
     Ok(())
 }
 
+/// Write a standout START or END marker to progress.txt.
+/// Format: *** START_<key> - <timestamp> ***
+pub fn log_marker(
+    config: &Config,
+    kind: &str,
+    key: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let path = config.progress_file_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ");
+    let line = format!("*** {}_{} - {} ***\n", kind, key, timestamp);
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)?;
+    f.write_all(line.as_bytes())?;
+    Ok(())
+}
+
+/// Return true if `*** END_<key> ***` is already in progress.txt (phase completed).
+pub fn progress_marker_done(config: &Config, key: &str) -> bool {
+    let path = config.progress_file_path();
+    if !path.exists() {
+        return false;
+    }
+    let needle = format!("*** END_{}", key);
+    std::fs::read_to_string(&path)
+        .map(|s| s.contains(&needle))
+        .unwrap_or(false)
+}
+
 // --- Console output helpers ---
 
 pub fn info(msg: &str) {

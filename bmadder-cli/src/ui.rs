@@ -137,6 +137,15 @@ fn handle_request(
                 .unwrap_or(200);
             respond_json(request, &activity_log_payload(config, limit)?)?;
         }
+        (Method::Get, "/api/logs/progress") => {
+            let path = config.progress_file_path();
+            let content = if path.exists() {
+                fs::read_to_string(path)?
+            } else {
+                String::new()
+            };
+            respond_json(request, &content)?;
+        }
         (Method::Post, "/api/run") => {
             let mut body = String::new();
             request.as_reader().read_to_string(&mut body)?;
