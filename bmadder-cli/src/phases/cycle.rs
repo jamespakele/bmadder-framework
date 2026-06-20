@@ -16,12 +16,15 @@ pub fn run_cycle(
     let ready = story_io::count_by_status(&config.paths.stories_dir, StoryStatus::ReadyForDev);
     let refix = story_io::count_by_status(&config.paths.stories_dir, StoryStatus::Refix);
 
-    let needs_plan = ready == 0 && refix == 0;
+    let sharding_done = logging::progress_marker_done(config, "PRD_SHARD");
+    let needs_plan = (ready == 0 && refix == 0) || !sharding_done;
 
     if needs_plan {
-        logging::info("No READY_FOR_DEV or REFIX stories. Running plan phase...");
-        // Always run SM — the SM prompt already skips existing stories and fills gaps.
-        // Forcing skip here loses partial sharding runs.
+        if !sharding_done {
+            logging::info("PRD sharding incomplete — running plan phase to fill remaining stories...");
+        } else {
+            logging::info("No READY_FOR_DEV or REFIX stories. Running plan phase...");
+        }
         plan::run_plan(config, skip_sm, skip_po)?;
     } else {
         logging::info(&format!(
