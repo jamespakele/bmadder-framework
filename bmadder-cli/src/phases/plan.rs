@@ -51,7 +51,7 @@ pub fn run_plan(
             &format!("SM sharding via {}", model),
         )?;
 
-        let prompt = prompts::sm_batch_prompt();
+        let prompt = prompts::sm_batch_prompt(config);
         let files: Vec<String> = prompts::sm_batch_files(config);
         let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 

@@ -217,7 +217,9 @@ model = "sonnet"
 skill = "bmad-code-review"
 
 [agent_hints]
-codex = "gpt5"
+specialist = "kimi27"
+generalist = "dsv4pro"
+planning-qa = "glm52"
 "#;
         let config_path = dir.join("bmadder.toml");
         std::fs::write(&config_path, toml).unwrap();

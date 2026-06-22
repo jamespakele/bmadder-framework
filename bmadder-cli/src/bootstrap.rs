@@ -80,9 +80,9 @@ model = "glm52"
 skill = "bmad-code-review"
 
 [agent_hints]
-codex = "kimi27"
-claude = "dsv4pro"
-glm = "glm52"
+specialist = "kimi27"
+generalist = "dsv4pro"
+planning-qa = "glm52"
 
 [defaults]
 max_dev_iterations = 10

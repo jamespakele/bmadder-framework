@@ -273,7 +273,7 @@ fn process_sm_po_loop(
 
         // Step A: SM write/revise
         logging::info("SM: writing/revising story...");
-        let sm_prompt = prompts::sm_write_story_prompt(&current);
+        let sm_prompt = prompts::sm_write_story_prompt(config, &current);
         let sm_files: Vec<String> = prompts::sm_write_files(config, &current);
         let sm_refs: Vec<&str> = sm_files.iter().map(|s| s.as_str()).collect();
 
@@ -539,7 +539,7 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
         "Creating next story from PRD",
     )?;
 
-    let prompt = prompts::sm_single_prompt();
+    let prompt = prompts::sm_single_prompt(config);
     let files: Vec<String> = prompts::sm_single_files(config);
     let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 

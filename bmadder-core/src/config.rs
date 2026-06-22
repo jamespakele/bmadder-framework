@@ -110,7 +110,7 @@ pub struct Config {
     pub models: HashMap<String, String>,
     /// Role key → role config.
     pub roles: HashMap<String, RoleConfig>,
-    /// agent_hint value → logical model key (e.g., "codex" → "gpt5").
+    /// agent_hint value → logical model key (e.g., "specialist" → "kimi27").
     pub agent_hints: HashMap<String, String>,
     /// Default limits / timing.
     pub defaults: DefaultsConfig,
@@ -380,6 +380,9 @@ state_dir = "_bmad"
 [models]
 sonnet = "claude-sonnet-4"
 gpt5 = "gpt-5"
+kimi27 = "ollama/kimi-k2.7-code:cloud"
+dsv4pro = "ollama/deepseek-v4-pro:cloud"
+glm52 = "ollama/glm-5.2:cloud"
 
 [roles.sm]
 personality = "bmad-agent-dev"
@@ -397,8 +400,9 @@ model = "sonnet"
 skill = "bmad-code-review"
 
 [agent_hints]
-codex = "gpt5"
-claude = "sonnet"
+specialist = "kimi27"
+generalist = "dsv4pro"
+planning-qa = "glm52"
 "#
     }
 
@@ -474,18 +478,18 @@ claude = "sonnet"
         };
         assert_eq!(config.resolve_model(Phase::Dev, Some(&story)), "gpt-5");
 
-        // With agent_hint "codex" → should resolve to "gpt-5"
-        let fm_codex = StoryFrontmatter {
-            agent_hint: Some("codex".into()),
+        // With agent_hint "specialist" → should resolve to "ollama/kimi-k2.7-code:cloud"
+        let fm_specialist = StoryFrontmatter {
+            agent_hint: Some("specialist".into()),
             ..fm
         };
-        let story_codex = Story {
-            frontmatter: fm_codex,
+        let story_specialist = Story {
+            frontmatter: fm_specialist,
             ..story
         };
         assert_eq!(
-            config.resolve_model(Phase::Dev, Some(&story_codex)),
-            "gpt-5"
+            config.resolve_model(Phase::Dev, Some(&story_specialist)),
+            "ollama/kimi-k2.7-code:cloud"
         );
     }
 

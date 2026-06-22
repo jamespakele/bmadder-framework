@@ -1,4 +1,28 @@
+use bmadder_core::config::Config;
 use bmadder_core::story::Story;
+
+/// Build a guidance block describing available agent_hints for the SM.
+fn agent_hints_guidance(config: &Config) -> String {
+    if config.agent_hints.is_empty() {
+        return String::new();
+    }
+    let mut g = String::from(
+        "\nAgent model hints — set agent_hint in story frontmatter to route to a specific model:\n",
+    );
+    for (hint, model_key) in &config.agent_hints {
+        let resolved = config
+            .models
+            .get(model_key)
+            .cloned()
+            .unwrap_or_else(|| model_key.clone());
+        g.push_str(&format!(
+            "  agent_hint: \"{}\" → model \"{}\"\n",
+            hint, resolved
+        ));
+    }
+    g.push_str("Omit agent_hint to use the default dev model.\n");
+    g
+}
 
 /// Return the context files for plan-phase SM invocation.
 pub fn sm_batch_files(config: &bmadder_core::config::Config) -> Vec<String> {
@@ -11,8 +35,9 @@ pub fn sm_batch_files(config: &bmadder_core::config::Config) -> Vec<String> {
 /// Build SM batch prompt (bmadder plan — first phase).
 /// Tells the skill what to do and provides the @files. The skill workflow
 /// handles the mechanics.
-pub fn sm_batch_prompt() -> String {
-    r#"Bulk story sharding from the PRD into individual story files.
+pub fn sm_batch_prompt(config: &Config) -> String {
+    let mut p = String::from(
+        r#"Bulk story sharding from the PRD into individual story files.
 
 Context files provided: prd.md, architecture.md.
 
@@ -40,8 +65,10 @@ If no MISSING or REVISE stories remain, log that sharding is complete and exit.
 
 Do NOT implement code. Do NOT approve stories.
 Log a summary to _bmad/logs/activity.log.
-"#
-    .to_string()
+"#,
+    );
+    p.push_str(&agent_hints_guidance(config));
+    p
 }
 
 /// Return the context files for plan-phase PO invocation.
@@ -198,8 +225,9 @@ pub fn sm_single_files(config: &bmadder_core::config::Config) -> Vec<String> {
 }
 
 /// Build SM single-story prompt for iterative mode (creates ONE story from PRD).
-pub fn sm_single_prompt() -> String {
-    r#"Create ONE story from the PRD.
+pub fn sm_single_prompt(config: &Config) -> String {
+    let mut p = String::from(
+        r#"Create ONE story from the PRD.
 
 Context files provided: prd.md, architecture.md, progress.txt.
 
@@ -220,8 +248,10 @@ B) If the PRD is FULLY implemented:
    → Do NOT create any story file.
 
 Create ONLY ONE story file. Do not implement code.
-"#
-    .to_string()
+"#,
+    );
+    p.push_str(&agent_hints_guidance(config));
+    p
 }
 
 /// Return the context files for iterative SM write/revise.
@@ -260,8 +290,9 @@ pub fn sm_write_files(config: &bmadder_core::config::Config, story: &Story) -> V
 }
 
 /// Build SM write/revise prompt for iterative SM↔PO loop.
-pub fn sm_write_story_prompt(_story: &Story) -> String {
-    r#"Write or revise ONE story for the iterative pipeline.
+pub fn sm_write_story_prompt(config: &Config, _story: &Story) -> String {
+    let mut p = String::from(
+        r#"Write or revise ONE story for the iterative pipeline.
 
 Context files provided: the story file, prd.md, architecture.md, progress.txt, activity.log.
 
@@ -280,8 +311,10 @@ B) If story status is "REVISE":
 Do NOT implement any code. Do NOT approve the story yourself.
 Do NOT touch any other story files.
 Log a brief summary to _bmad/logs/activity.log.
-"#
-    .to_string()
+"#,
+    );
+    p.push_str(&agent_hints_guidance(config));
+    p
 }
 
 /// Return the context files for iterative single-story PO review.
