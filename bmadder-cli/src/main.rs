@@ -107,6 +107,8 @@ enum Command {
         #[arg(default_value = ".")]
         project_dir: PathBuf,
     },
+    /// Generate a fresh bmadder.toml template for comparison/upgrade
+    NewConfig,
 }
 
 fn main() {
@@ -117,6 +119,30 @@ fn main() {
         if let Err(e) = bootstrap::run_bootstrap(project_dir) {
             eprintln!("Bootstrap error: {}", e);
             process::exit(2);
+        }
+        return;
+    }
+
+    if let Command::NewConfig = &cli.command {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let existing = cwd.join("bmadder.toml");
+        let target = if existing.exists() {
+            cwd.join("bmadder.new.toml")
+        } else {
+            existing
+        };
+        let template = bootstrap::default_config_template();
+        if let Err(e) = std::fs::write(&target, template) {
+            eprintln!("Error writing config: {}", e);
+            process::exit(2);
+        }
+        println!("Wrote fresh config to: {}", target.display());
+        if target
+            .file_name()
+            .map(|n| n == "bmadder.new.toml")
+            .unwrap_or(false)
+        {
+            println!("Compare with: diff bmadder.toml bmadder.new.toml");
         }
         return;
     }
@@ -218,7 +244,7 @@ fn main() {
         }
         Command::Validate => phases::validate::run_validate(&config),
         Command::Ui { host, port } => ui::run_ui(&config, &config_path, host, *port),
-        Command::Bootstrap { .. } => {
+        Command::Bootstrap { .. } | Command::NewConfig => {
             // Already handled above
             unreachable!()
         }
