@@ -80,8 +80,9 @@ model = "glm52"
 skill = "bmad-code-review"
 
 [agent_hints]
-codex = "gpt5"
-claude = "sonnet"
+codex = "kimi27"
+claude = "dsv4pro"
+glm = "glm52"
 
 [defaults]
 max_dev_iterations = 10
