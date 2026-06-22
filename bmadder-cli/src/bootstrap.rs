@@ -55,25 +55,28 @@ state_dir = "_bmad"
 [models]
 sonnet = "claude-sonnet-4"
 gpt5 = "gpt-5"
+glm52 = "ollama/glm-5.2:cloud"
+dsv4pro = "ollama/deepseek-v4-pro:cloud"
+kimi27 = "ollama/kimi-k2.7-code:cloud"
 
 [roles.sm]
 personality = "bmad-agent-dev"
-model = "sonnet"
+model = "glm52"
 skill = "bmad-create-epics-and-stories"
 
 [roles.po]
 personality = "bmad-agent-dev"
-model = "sonnet"
+model = "dsv4pro"
 skill = "bmad-create-epics-and-stories"
 
 [roles.dev]
 personality = "bmad-agent-dev"
-model = "gpt5"
+model = "kimi27"
 skill = "bmad-dev-story"
 
 [roles.qa]
 personality = "bmad-agent-dev"
-model = "sonnet"
+model = "glm52"
 skill = "bmad-code-review"
 
 [agent_hints]
