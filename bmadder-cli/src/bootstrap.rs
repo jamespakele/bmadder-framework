@@ -28,7 +28,7 @@ skill = "bmad-create-epics-and-stories"
 
 [roles.po]
 personality = "bmad-agent-dev"
-model = "dsv4pro"
+model = "glm52"
 skill = "bmad-create-epics-and-stories"
 
 [roles.dev]
@@ -38,7 +38,7 @@ skill = "bmad-dev-story"
 
 [roles.qa]
 personality = "bmad-agent-dev"
-model = "glm52"
+model = "dsv4pro"
 skill = "bmad-code-review"
 
 [agent_hints]
