@@ -4,6 +4,7 @@ mod git;
 mod logging;
 mod phases;
 mod prompts;
+mod spec;
 mod story_io;
 mod ui;
 

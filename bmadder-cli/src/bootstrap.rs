@@ -13,6 +13,8 @@ pub fn default_config_template() -> &'static str {
 skills_dir = ".agent/skills"
 stories_dir = "docs/backlog/stories"
 state_dir = "_bmad"
+frozen_dir = "_bmad/frozen"
+deferred_work_file = "_bmad/deferred-work.md"
 
 [models]
 sonnet = "claude-sonnet-4"

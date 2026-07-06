@@ -13,10 +13,22 @@ pub struct PathsConfig {
     pub architecture_file: PathBuf,
     #[serde(default = "default_orchestrator_marker")]
     pub orchestrator_marker: PathBuf,
+    /// Directory for frozen story specs (default: _bmad/frozen)
+    #[serde(default = "default_frozen_dir")]
+    pub frozen_dir: PathBuf,
+    /// Deferred work ledger file (default: _bmad/deferred-work.md)
+    #[serde(default = "default_deferred_work")]
+    pub deferred_work_file: PathBuf,
 }
 
 fn default_orchestrator_marker() -> PathBuf {
     PathBuf::from("_bmad/orchestrator-master.md")
+}
+fn default_frozen_dir() -> PathBuf {
+    PathBuf::from("_bmad/frozen")
+}
+fn default_deferred_work() -> PathBuf {
+    PathBuf::from("_bmad/deferred-work.md")
 }
 
 /// Per-role configuration: which personality, model, and skill to use.
@@ -153,6 +165,8 @@ struct PathsConfigToml {
     prd_file: Option<String>,
     architecture_file: Option<String>,
     orchestrator_marker: Option<String>,
+    frozen_dir: Option<String>,
+    deferred_work_file: Option<String>,
 }
 
 impl Config {
@@ -190,6 +204,11 @@ impl Config {
             orchestrator_marker: resolve_path(
                 toml.paths.orchestrator_marker.as_deref(),
                 "_bmad/orchestrator-master.md",
+            ),
+            frozen_dir: resolve_path(toml.paths.frozen_dir.as_deref(), "_bmad/frozen"),
+            deferred_work_file: resolve_path(
+                toml.paths.deferred_work_file.as_deref(),
+                "_bmad/deferred-work.md",
             ),
         };
 

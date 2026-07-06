@@ -2,6 +2,7 @@ use crate::agent::invoke_agent;
 use crate::git;
 use crate::logging;
 use crate::prompts;
+use crate::spec;
 use crate::story_io;
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::StoryStatus;
@@ -80,6 +81,40 @@ pub fn run_qa(
 
         match status {
             StoryStatus::Completed => {
+                // Verify against frozen spec
+                let verification = spec::verify_after_qa(&updated);
+                if verification.passed {
+                    logging::ok(&format!("QA verification passed for {}", story_id));
+                    logging::log_activity(
+                        config,
+                        "ORCH",
+                        story_id,
+                        "VERIFY_PASS",
+                        "QA spec verification passed",
+                    )?;
+                } else {
+                    let failures: Vec<&str> = verification
+                        .failures()
+                        .iter()
+                        .map(|c| c.name.as_str())
+                        .collect();
+                    logging::warn(&format!(
+                        "QA verification failed for {}: {:?}",
+                        story_id, failures
+                    ));
+                    logging::log_activity(
+                        config,
+                        "ORCH",
+                        story_id,
+                        "VERIFY_FAIL",
+                        &format!("QA checks failed: {}", failures.join(", ")),
+                    )?;
+                    // Force REFIX — verification failed
+                    story_io::update_story_status(&story.path, StoryStatus::Refix)?;
+                    story_io::update_story_field(&story.path, "qa_status", "FAIL")?;
+                    failed += 1;
+                    continue;
+                }
                 logging::ok(&format!("QA PASS: {}", story_id));
                 logging::log_activity(
                     config,

@@ -2,6 +2,7 @@ use crate::agent::{invoke_agent, is_gemini_rate_limited, GeminiBackoff};
 use crate::git;
 use crate::logging;
 use crate::prompts;
+use crate::spec;
 use crate::story_io;
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::StoryStatus;
@@ -110,6 +111,42 @@ pub fn run_dev(
 
             match status {
                 StoryStatus::PendingQA | StoryStatus::Completed => {
+                    // Verify against frozen spec
+                    let frozen = spec::read_frozen_spec(
+                        &config.paths.frozen_dir,
+                        &story.frontmatter.story_id,
+                    );
+                    let verification = spec::verify_after_dev(&updated, frozen.as_deref());
+                    if verification.passed {
+                        logging::ok(&format!("Story {} verified ✓", story_id));
+                        logging::log_activity(
+                            config,
+                            "ORCH",
+                            story_id,
+                            "VERIFY_PASS",
+                            "Spec verification passed",
+                        )?;
+                    } else {
+                        let failures: Vec<&str> = verification
+                            .failures()
+                            .iter()
+                            .map(|c| c.name.as_str())
+                            .collect();
+                        logging::warn(&format!(
+                            "Story {} verification failed: {:?}",
+                            story_id, failures
+                        ));
+                        logging::log_activity(
+                            config,
+                            "ORCH",
+                            story_id,
+                            "VERIFY_FAIL",
+                            &format!("Checks failed: {}", failures.join(", ")),
+                        )?;
+                        // Don't advance — keep in IN_DEV for another iteration
+                        story_io::update_story_status(&story.path, StoryStatus::InDev)?;
+                        continue;
+                    }
                     logging::ok(&format!("Story {} moved to {}", story_id, status.label()));
                     logging::log_activity(
                         config,

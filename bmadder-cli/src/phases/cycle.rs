@@ -21,7 +21,9 @@ pub fn run_cycle(
 
     if needs_plan {
         if !sharding_done {
-            logging::info("PRD sharding incomplete — running plan phase to fill remaining stories...");
+            logging::info(
+                "PRD sharding incomplete — running plan phase to fill remaining stories...",
+            );
         } else {
             logging::info("No READY_FOR_DEV or REFIX stories. Running plan phase...");
         }

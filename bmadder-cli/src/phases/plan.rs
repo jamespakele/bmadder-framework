@@ -1,6 +1,7 @@
 use crate::agent::invoke_agent;
 use crate::logging;
 use crate::prompts;
+use crate::spec;
 use crate::story_io;
 use bmadder_core::config::Config;
 use bmadder_core::story::StoryStatus;
@@ -143,6 +144,19 @@ pub fn run_plan(
         "Result: {} READY_FOR_DEV, {} REVISE",
         ready, revise
     ));
+
+    // Freeze specs for all READY_FOR_DEV stories
+    let ready_stories =
+        story_io::get_stories_by_status(&config.paths.stories_dir, StoryStatus::ReadyForDev)?;
+    for story in &ready_stories {
+        match spec::freeze_spec(&config.paths.frozen_dir, story) {
+            Ok(path) => logging::ok(&format!("Frozen spec: {}", path.display())),
+            Err(e) => logging::warn(&format!(
+                "Failed to freeze {}: {}",
+                story.frontmatter.story_id, e
+            )),
+        }
+    }
     logging::log_progress(
         config,
         &format!("PLAN: {} approved, {} need revision", ready, revise),
