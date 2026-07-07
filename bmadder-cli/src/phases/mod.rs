@@ -3,5 +3,7 @@ pub mod dev;
 pub mod iterative;
 pub mod plan;
 pub mod qa;
+pub mod quick_fix;
 pub mod status;
+pub mod sweep;
 pub mod validate;

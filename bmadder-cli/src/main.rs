@@ -102,6 +102,13 @@ enum Command {
     },
     /// Validate all story files
     Validate,
+    /// Quick-fix fast path: skip SM/PO, go straight to quick-dev
+    QuickFix {
+        /// Description of the fix/feature to implement
+        fix: Vec<String>,
+    },
+    /// Triage deferred-work ledger into buildable bundles
+    Sweep,
     /// Bootstrap a new BMADder project
     Bootstrap {
         /// Project directory to bootstrap (default: current directory)
@@ -244,6 +251,11 @@ fn main() {
             }
         }
         Command::Validate => phases::validate::run_validate(&config),
+        Command::QuickFix { fix } => {
+            let description = fix.join(" ");
+            phases::quick_fix::run_quick_fix(&config, &description)
+        }
+        Command::Sweep => phases::sweep::run_sweep(&config),
         Command::Ui { host, port } => ui::run_ui(&config, &config_path, host, *port),
         Command::Bootstrap { .. } | Command::NewConfig => {
             // Already handled above

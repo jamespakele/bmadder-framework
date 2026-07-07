@@ -38,6 +38,11 @@ personality = "bmad-agent-dev"
 model = "kimi27"
 skill = "bmad-dev-story"
 
+[roles.quick]
+personality = "bmad-agent-dev"
+model = "kimi27"
+skill = "bmad-quick-dev"
+
 [roles.qa]
 personality = "bmad-agent-dev"
 model = "dsv4pro"
