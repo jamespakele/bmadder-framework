@@ -200,7 +200,8 @@
                 border-left: 1px solid #20242c;
                 border-right: 1px solid #20242c;
             }
-            .panel-resize:hover, .panel-resize.dragging {
+            .panel-resize:hover,
+            .panel-resize.dragging {
                 background: #8b7cf0;
                 border-color: #8b7cf0;
             }
@@ -485,7 +486,8 @@
                 background: transparent;
                 flex: none;
             }
-            .log-resize:hover, .log-resize.dragging {
+            .log-resize:hover,
+            .log-resize.dragging {
                 background: #8b7cf0;
             }
             .log-tab {
@@ -498,7 +500,9 @@
                 border-radius: 5px;
                 cursor: pointer;
             }
-            .log-tab:hover { color: #9aa0ab; }
+            .log-tab:hover {
+                color: #9aa0ab;
+            }
             .log-tab-active {
                 background: #1e2028;
                 color: #cfd3da;
@@ -631,8 +635,113 @@
                     <button id="graphBtn"><span>⊹</span>Graph</button
                     ><button id="boardBtn"><span>▦</span>Board</button>
                 </div>
+                <div class="seg view">
+                    <button
+                        id="sweepBtn"
+                        title="Sweep deferred-work ledger into stories"
+                    >
+                        ⟳ Sweep
+                    </button>
+                </div>
+                <div
+                    style="
+                        display: flex;
+                        align-items: center;
+                        gap: 4px;
+                        margin: 0 6px;
+                    "
+                >
+                    <input
+                        id="quickFixInput"
+                        type="text"
+                        placeholder="Quick fix: describe the bug or tweak..."
+                        style="
+                            background: #14161b;
+                            border: 1px solid #2a2e36;
+                            border-radius: 7px;
+                            padding: 7px 12px;
+                            color: #cfd3da;
+                            font-size: 12px;
+                            width: 240px;
+                            outline: none;
+                        "
+                    />
+                    <button
+                        id="quickFixBtn"
+                        class="btn"
+                        style="padding: 0 12px; font-size: 12px"
+                    >
+                        Go
+                    </button>
+                </div>
                 <div class="spacer"></div>
                 <div class="run-controls">
+                    <div
+                        style="
+                            display: flex;
+                            align-items: center;
+                            gap: 8px;
+                            margin-right: 8px;
+                        "
+                    >
+                        <label
+                            style="
+                                display: flex;
+                                align-items: center;
+                                gap: 3px;
+                                font-size: 10px;
+                                color: #7e8893;
+                                cursor: pointer;
+                            "
+                            ><input
+                                type="checkbox"
+                                id="chkDryRun"
+                                style="accent-color: #7c6cf0"
+                            />Dry</label
+                        ><label
+                            style="
+                                display: flex;
+                                align-items: center;
+                                gap: 3px;
+                                font-size: 10px;
+                                color: #7e8893;
+                                cursor: pointer;
+                            "
+                            ><input
+                                type="checkbox"
+                                id="chkNoCommit"
+                                style="accent-color: #7c6cf0"
+                            />No&nbsp;commit</label
+                        ><label
+                            style="
+                                display: flex;
+                                align-items: center;
+                                gap: 3px;
+                                font-size: 10px;
+                                color: #7e8893;
+                                cursor: pointer;
+                            "
+                            ><input
+                                type="checkbox"
+                                id="chkSkipPo"
+                                style="accent-color: #7c6cf0"
+                            />Skip&nbsp;PO</label
+                        ><label
+                            style="
+                                display: flex;
+                                align-items: center;
+                                gap: 3px;
+                                font-size: 10px;
+                                color: #7e8893;
+                                cursor: pointer;
+                            "
+                            ><input
+                                type="checkbox"
+                                id="chkSkipSm"
+                                style="accent-color: #7c6cf0"
+                            />Skip&nbsp;SM</label
+                        >
+                    </div>
                     <div
                         id="progressLabel"
                         class="mono muted"
@@ -659,14 +768,33 @@
                     <section class="log" id="logPanel">
                         <div class="log-resize" id="logResize"></div>
                         <div class="log-head">
-                            <div style="display:flex;gap:2px">
-                                <button id="tabActivity" class="log-tab log-tab-active">activity.log</button>
-                                <button id="tabProgress" class="log-tab">progress.txt</button>
+                            <div style="display: flex; gap: 2px">
+                                <button
+                                    id="tabActivity"
+                                    class="log-tab log-tab-active"
+                                >
+                                    activity.log
+                                </button>
+                                <button id="tabProgress" class="log-tab">
+                                    progress.txt
+                                </button>
                             </div>
-                            <span id="logCount" class="mono muted" style="font-size:10px"></span>
+                            <span
+                                id="logCount"
+                                class="mono muted"
+                                style="font-size: 10px"
+                            ></span>
                         </div>
                         <div id="logBody" class="log-body"></div>
-                        <div id="progressBody" class="log-body" style="display:none;white-space:pre-wrap;color:#9aa0ab"></div>
+                        <div
+                            id="progressBody"
+                            class="log-body"
+                            style="
+                                display: none;
+                                white-space: pre-wrap;
+                                color: #9aa0ab;
+                            "
+                        ></div>
                     </section>
                 </main>
                 <div class="panel-resize" id="rightResize"></div>
@@ -836,12 +964,13 @@
                 }
                 async function refresh() {
                     try {
-                        const [status, stories, log, progress] = await Promise.all([
-                            api("/api/status"),
-                            api("/api/stories"),
-                            api("/api/logs/activity?limit=200"),
-                            api("/api/logs/progress"),
-                        ]);
+                        const [status, stories, log, progress] =
+                            await Promise.all([
+                                api("/api/status"),
+                                api("/api/stories"),
+                                api("/api/logs/activity?limit=200"),
+                                api("/api/logs/progress"),
+                            ]);
                         state.status = status;
                         state.stories = stories;
                         state.log = log;
@@ -946,7 +1075,10 @@
                     return (cfg.models || {})[h] || h;
                 };
                 const roleModel = (key) => {
-                    const role = state.status && state.status.roles && state.status.roles[key];
+                    const role =
+                        state.status &&
+                        state.status.roles &&
+                        state.status.roles[key];
                     return role ? role.resolved_model : "";
                 };
                 const hintColor = (h) =>
@@ -1169,9 +1301,10 @@
                     try {
                         const command =
                             state.mode === "cycle" ? "cycle" : "iterative";
+                        const flags = collectFlags();
                         const res = await api("/api/run", {
                             method: "POST",
-                            body: JSON.stringify({ command }),
+                            body: JSON.stringify({ command, ...flags }),
                         });
                         state.log.push({
                             time: new Date().toISOString(),
@@ -1337,23 +1470,43 @@
                 function renderLeft(stories, phs) {
                     const sel = stories.find((s) => s.id === state.selStory),
                         ph = phs.find((p) => p.key === state.selPhase);
-                    $("left").innerHTML =
-                        (() => {
+                    $("left").innerHTML = (() => {
                         const cfg = state.status || {};
                         const p = cfg.paths || {};
                         const roles = cfg.roles || {};
                         const wsPaths = [
                             ["skills_dir", p.skills_dir || ".agent/skills"],
-                            ["stories_dir", p.stories_dir || "docs/backlog/stories"],
+                            [
+                                "stories_dir",
+                                p.stories_dir || "docs/backlog/stories",
+                            ],
                             ["state_dir", p.state_dir || "_bmad"],
                             ["prd_file", p.prd_file || "docs/prd.md"],
-                            ["architecture", p.architecture_file || "docs/architecture.md"],
+                            [
+                                "architecture",
+                                p.architecture_file || "docs/architecture.md",
+                            ],
                         ];
                         const agents = [
-                            ["Amelia", "A", "Dev · SM · QA", roles.dev ? roles.dev.resolved_model : "", "#4c8df6"],
-                            ["John", "J", "Product Owner", roles.po ? roles.po.resolved_model : "", "#e0a93b"],
+                            [
+                                "Amelia",
+                                "A",
+                                "Dev · SM · QA",
+                                roles.dev ? roles.dev.resolved_model : "",
+                                "#4c8df6",
+                            ],
+                            [
+                                "John",
+                                "J",
+                                "Product Owner",
+                                roles.po ? roles.po.resolved_model : "",
+                                "#e0a93b",
+                            ],
                         ];
-                        const routing = Object.entries(roles).map(([k, r]) => [k, r.resolved_model]);
+                        const routing = Object.entries(roles).map(([k, r]) => [
+                            k,
+                            r.resolved_model,
+                        ]);
                         return `<div class="section-title">Workspace</div><div class="panel">${wsPaths.map((r) => `<div class="kv"><span style="color:#8b919c;font-size:11px">${r[0]}</span><span class="pill">${r[1]}</span></div>`).join("")}</div><div class="section-title">Agents · pi.dev</div>${agents.map((a) => `<div class="agent"><div class="avatar" style="background:${a[4]}">${a[1]}</div><div style="min-width:0;flex:1"><div style="font-weight:600;font-size:12.5px">${a[0]}</div><div class="tiny" style="color:#8b919c;margin-top:1px">${a[2]}</div></div><div class="mono" style="font-size:9.5px;color:#cfd3da;background:#1c2027;padding:3px 6px;border-radius:5px;text-align:right">${a[3]}</div></div>`).join("")}<div style="font-size:10.5px;color:#5c626c;margin-top:4px;line-height:1.5">+ Winston, Mary, Paige, Sally available in <span class="mono" style="color:#7e8893">.agent/skills</span></div><div class="section-title" style="margin-top:18px">Routing</div><div class="panel">${routing.map((r) => `<div class="kv"><span class="mono" style="font-size:11px;color:#8b919c">${r[0]}</span><span style="font-size:11px;color:#cfd3da">→ ${r[1]}</span></div>`).join("")}</div>${state.view === "board" && sel ? detailStory(sel, true) : ""}${state.view === "board" && ph && !sel ? detailPhase(ph, true) : ""}`;
                     })();
                 }
@@ -1402,12 +1555,15 @@
                 }
                 function renderLog() {
                     const isActivity = state.logTab !== "progress";
-                    $("tabActivity").className = "log-tab" + (isActivity ? " log-tab-active" : "");
-                    $("tabProgress").className = "log-tab" + (!isActivity ? " log-tab-active" : "");
+                    $("tabActivity").className =
+                        "log-tab" + (isActivity ? " log-tab-active" : "");
+                    $("tabProgress").className =
+                        "log-tab" + (!isActivity ? " log-tab-active" : "");
                     $("logBody").style.display = isActivity ? "" : "none";
                     $("progressBody").style.display = isActivity ? "none" : "";
                     if (isActivity) {
-                        $("logCount").textContent = `${state.log.length} events`;
+                        $("logCount").textContent =
+                            `${state.log.length} events`;
                         const error = state.error
                             ? `<div style="color:#e5484d;font-weight:600;margin-bottom:8px">UI error: ${esc(state.error)}</div>`
                             : "";
@@ -1423,8 +1579,10 @@
                                 : '<div style="color:#3f444d;font-style:italic">— connected to the BMADder runtime · press Run to launch the selected pipeline —</div>');
                     } else {
                         const lines = (state.progress || "").trim().split("\n");
-                        $("logCount").textContent = `${lines.filter(l => l).length} entries`;
-                        $("progressBody").textContent = state.progress || "— no progress entries yet —";
+                        $("logCount").textContent =
+                            `${lines.filter((l) => l).length} entries`;
+                        $("progressBody").textContent =
+                            state.progress || "— no progress entries yet —";
                     }
                 }
                 function renderModal() {
@@ -1579,14 +1737,25 @@
                 $("stepBtn").onclick = refresh;
                 $("stepBtn").textContent = "Refresh";
                 $("runBtn").onclick = run;
+                $("quickFixBtn").onclick = runQuickFix;
+                $("sweepBtn").onclick = runSweep;
+                $("quickFixInput").addEventListener("keydown", (e) => {
+                    if (e.key === "Enter") runQuickFix();
+                });
                 $("configBtn").onclick = () => {
                     state.showConfig = true;
                     render();
                 };
 
                 // Log tabs
-                $("tabActivity").onclick = () => { state.logTab = "activity"; renderLog(); };
-                $("tabProgress").onclick = () => { state.logTab = "progress"; renderLog(); };
+                $("tabActivity").onclick = () => {
+                    state.logTab = "activity";
+                    renderLog();
+                };
+                $("tabProgress").onclick = () => {
+                    state.logTab = "progress";
+                    renderLog();
+                };
 
                 // Side panel resize
                 function makePanelResizer(handleId, panelId, side) {
@@ -1600,10 +1769,15 @@
                         document.body.style.cursor = "ew-resize";
                         document.body.style.userSelect = "none";
                         const onMove = (e) => {
-                            const delta = side === "left" ? e.clientX - startX : startX - e.clientX;
+                            const delta =
+                                side === "left"
+                                    ? e.clientX - startX
+                                    : startX - e.clientX;
                             const min = parseInt(panel.style.minWidth) || 160;
                             const max = parseInt(panel.style.maxWidth) || 520;
-                            panel.style.width = Math.max(min, Math.min(max, startW + delta)) + "px";
+                            panel.style.width =
+                                Math.max(min, Math.min(max, startW + delta)) +
+                                "px";
                         };
                         const onUp = () => {
                             handle.classList.remove("dragging");
@@ -1635,7 +1809,10 @@
                     });
                     function onMove(e) {
                         const delta = startY - e.clientY;
-                        const newH = Math.max(36, Math.min(window.innerHeight * 0.8, startH + delta));
+                        const newH = Math.max(
+                            36,
+                            Math.min(window.innerHeight * 0.8, startH + delta),
+                        );
                         panel.style.height = newH + "px";
                     }
                     function onUp() {
@@ -1645,6 +1822,69 @@
                     }
                 })();
 
+                function collectFlags() {
+                    return {
+                        dry_run: $("chkDryRun").checked,
+                        no_commit: $("chkNoCommit").checked,
+                        skip_po: $("chkSkipPo").checked,
+                        skip_sm: $("chkSkipSm").checked,
+                    };
+                }
+                async function runQuickFix() {
+                    const desc = $("quickFixInput").value.trim();
+                    if (!desc) {
+                        $("quickFixInput").focus();
+                        return;
+                    }
+                    state.running = true;
+                    state.error = null;
+                    render();
+                    try {
+                        const flags = collectFlags();
+                        const res = await api("/api/run", {
+                            method: "POST",
+                            body: JSON.stringify({
+                                command: "quick-fix",
+                                ...flags,
+                                fix: desc,
+                            }),
+                        });
+                        state.log.push({
+                            time: new Date().toISOString(),
+                            text: `UI launched quick-fix · pid ${res.pid}`,
+                            fail: false,
+                        });
+                        $("quickFixInput").value = "";
+                        startPolling();
+                        await refresh();
+                    } catch (err) {
+                        state.running = false;
+                        state.error = err.message || String(err);
+                        render();
+                    }
+                }
+                async function runSweep() {
+                    state.running = true;
+                    state.error = null;
+                    render();
+                    try {
+                        const res = await api("/api/run", {
+                            method: "POST",
+                            body: JSON.stringify({ command: "sweep" }),
+                        });
+                        state.log.push({
+                            time: new Date().toISOString(),
+                            text: `UI launched sweep · pid ${res.pid}`,
+                            fail: false,
+                        });
+                        startPolling();
+                        await refresh();
+                    } catch (err) {
+                        state.running = false;
+                        state.error = err.message || String(err);
+                        render();
+                    }
+                }
                 refresh();
             })();
         </script>

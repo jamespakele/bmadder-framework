@@ -94,6 +94,7 @@ struct RunRequest {
     skip_sm: Option<bool>,
     from_existing: Option<bool>,
     start_from: Option<String>,
+    fix: Option<String>,
 }
 
 pub fn run_ui(
@@ -314,6 +315,8 @@ fn spawn_runtime(
         "iterative",
         "status",
         "validate",
+        "quick-fix",
+        "sweep",
     ];
     if !allowed.contains(&command.as_str()) {
         return Err(format!("unsupported command: {}", run.command).into());
@@ -343,6 +346,13 @@ fn spawn_runtime(
         cmd.arg("--start-from").arg(start_from);
     }
     cmd.arg(&command);
+
+    // quick-fix takes a description argument
+    if command == "quick-fix" {
+        if let Some(ref fix) = run.fix {
+            cmd.arg(fix);
+        }
+    }
 
     let child = cmd.spawn()?;
     Ok(json!({
