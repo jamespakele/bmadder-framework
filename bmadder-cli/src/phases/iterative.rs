@@ -1,4 +1,4 @@
-use crate::agent::invoke_agent;
+use crate::agent::{invoke_agent, invoke_agent_plan};
 use crate::git;
 use crate::logging;
 use crate::prompts;
@@ -280,7 +280,7 @@ fn process_sm_po_loop(
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke SM");
         } else {
-            invoke_agent(
+            invoke_agent_plan(
                 config,
                 "sm",
                 &model,
@@ -313,7 +313,7 @@ fn process_sm_po_loop(
             logging::info("[DRY RUN] Would invoke PO");
             break;
         }
-        invoke_agent(
+        invoke_agent_plan(
             config,
             "po",
             &model,
@@ -548,7 +548,7 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
         return Ok(None);
     }
 
-    invoke_agent(
+    invoke_agent_plan(
         config,
         "sm",
         &model,
