@@ -56,6 +56,9 @@ pub fn run_plan(
         let files: Vec<String> = prompts::sm_batch_files(config);
         let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 
+        // Ensure stories directory exists
+        std::fs::create_dir_all(&config.paths.stories_dir)?;
+
         if config.dry_run {
             logging::info(
                 "[DRY RUN] Would invoke SM with pi --skill bmad-create-epics-and-stories",

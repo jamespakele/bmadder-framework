@@ -5,7 +5,7 @@ use crate::prompts;
 use crate::story_io;
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::{Story, StoryStatus};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub fn run_iterative(
     config: &Config,
@@ -527,6 +527,9 @@ fn check_all_done(config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
 fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std::error::Error>> {
     let model = config.resolve_model(Phase::Plan, None);
 
+    // Ensure stories directory exists before SM tries to write to it
+    std::fs::create_dir_all(&config.paths.stories_dir)?;
+
     // List stories before invoking SM
     let before = story_io::list_stories(&config.paths.stories_dir)?;
 
@@ -556,6 +559,21 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
         &["--system-prompt", &prompt],
     )?;
 
+    // If using moa-rust for plan, the consensus output goes to output/
+    // not docs/backlog/stories/. Run a formatting pass with pi to create
+    // a properly formatted story file from the consensus.
+    let after_plan = story_io::list_stories(&config.paths.stories_dir)?;
+    if after_plan.len() == before.len() {
+        // No story file was created directly — check for moa consensus output
+        if let Some(consensus) = find_latest_moa_output(config) {
+            logging::info(&format!(
+                "Found moa consensus: {}. Formatting into story file...",
+                consensus.display()
+            ));
+            format_consensus_as_story(config, &consensus, &file_refs)?;
+        }
+    }
+
     // Check for ALL_DONE after SM returns
     if check_all_done(config)? {
         logging::ok("SM signaled ALL_DONE.");
@@ -581,4 +599,99 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
             Ok(None)
         }
     }
+}
+
+/// Find the latest moa-rust consensus output in the project's output/ directory.
+fn find_latest_moa_output(config: &Config) -> Option<PathBuf> {
+    let output_dir = config.project_root.join("output");
+    if !output_dir.exists() {
+        return None;
+    }
+    let mut moa_files: Vec<PathBuf> = std::fs::read_dir(&output_dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|n| n.starts_with("moa-") && n.ends_with(".md"))
+                .unwrap_or(false)
+        })
+        .collect();
+    moa_files.sort_by(|a, b| {
+        b.metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
+            .cmp(
+                &a.metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
+            )
+    });
+    moa_files.first().cloned()
+}
+
+/// Run pi to convert a moa-rust consensus document into a properly formatted
+/// story file in docs/backlog/stories/.
+fn format_consensus_as_story(
+    config: &Config,
+    consensus_path: &Path,
+    context_files: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let consensus_rel = consensus_path
+        .strip_prefix(&config.project_root)
+        .unwrap_or(consensus_path)
+        .to_string_lossy()
+        .to_string();
+
+    let existing = story_io::list_stories(&config.paths.stories_dir)?;
+    let next_num = existing.len() + 1;
+
+    let format_prompt = format!(
+        r#"You are the Scrum Master formatting a consensus document into a proper story file.
+
+A multi-model consensus has been generated. Read it and write a SINGLE properly formatted story file.
+
+Consensus document: @{consensus}
+
+Rules:
+- Write the story file to: docs/backlog/stories/story-{nnnn:04}-<slug>.md
+- YAML frontmatter MUST include:
+    story_id: "STORY-{nnnn:04}"
+    title: "..."
+    status: "DRAFT"
+    po_alignment: "PENDING"
+    agent_hint: "specialist" (or "generalist" / "planning-qa" based on the work type)
+- Story sections MUST include: Context, Requirements, Acceptance Criteria, Implementation Notes, PO Alignment, QA Notes, Tasks
+- Extract the BEST consensus recommendation from the document — don't include the deliberation, just the final decisions
+- Acceptance Criteria must be numbered, specific, and testable (Given/When/Then where possible)
+- Log to _bmad/logs/activity.log
+"#,
+        consensus = consensus_rel,
+        nnnn = next_num,
+    );
+
+    let mut all_files: Vec<&str> = context_files.to_vec();
+    all_files.push(&consensus_rel);
+
+    logging::info("Running pi to format consensus into story file...");
+    let model = config.resolve_model(Phase::Plan, None);
+    let result = invoke_agent(
+        config,
+        "sm",
+        &model,
+        &all_files,
+        &["--system-prompt", &format_prompt],
+    )?;
+
+    if result.success {
+        logging::ok("Consensus formatted into story file.");
+    } else {
+        logging::warn(&format!(
+            "Formatting pass reported failure: {:?}",
+            result.error
+        ));
+    }
+
+    Ok(())
 }
