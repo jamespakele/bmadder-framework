@@ -6,6 +6,20 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
+/// Expand ~ to the user's home directory in a path string.
+fn expand_tilde(path: &str) -> String {
+    if path.starts_with("~/") {
+        if let Ok(home) = std::env::var("HOME") {
+            return format!("{}/{}", home, &path[2..]);
+        }
+    } else if path == "~" {
+        if let Ok(home) = std::env::var("HOME") {
+            return home;
+        }
+    }
+    path.to_string()
+}
+
 /// Build a command that loads a skill and processes given input files non-interactively.
 /// Supports both pi (@file syntax) and moa-rust (--file syntax) via config.file_arg.
 /// When `use_plan_command` is true, uses plan_command/plan_args/plan_file_arg if configured.
@@ -30,23 +44,27 @@ pub fn build_pi_command(
     })?;
 
     // Select command/args/file_arg — plan-specific or default
-    let (command, args, file_arg) = if use_plan_command && !config.pi_dev.plan_command.is_empty() {
-        (
-            &config.pi_dev.plan_command,
-            &config.pi_dev.plan_args,
-            if config.pi_dev.plan_file_arg.is_empty() {
-                &config.pi_dev.file_arg
-            } else {
-                &config.pi_dev.plan_file_arg
-            },
-        )
-    } else {
-        (
-            &config.pi_dev.command,
-            &config.pi_dev.args,
-            &config.pi_dev.file_arg,
-        )
-    };
+    let (raw_command, args, file_arg) =
+        if use_plan_command && !config.pi_dev.plan_command.is_empty() {
+            (
+                &config.pi_dev.plan_command,
+                &config.pi_dev.plan_args,
+                if config.pi_dev.plan_file_arg.is_empty() {
+                    &config.pi_dev.file_arg
+                } else {
+                    &config.pi_dev.plan_file_arg
+                },
+            )
+        } else {
+            (
+                &config.pi_dev.command,
+                &config.pi_dev.args,
+                &config.pi_dev.file_arg,
+            )
+        };
+
+    // Expand ~ in command path (Rust's Command::new doesn't do shell expansion)
+    let command = expand_tilde(raw_command);
 
     let mut cmd = Command::new(command);
     for arg in args {
