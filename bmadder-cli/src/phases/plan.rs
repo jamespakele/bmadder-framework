@@ -1,4 +1,4 @@
-use crate::agent::invoke_agent;
+use crate::agent::invoke_agent_plan;
 use crate::logging;
 use crate::prompts;
 use crate::spec;
@@ -61,7 +61,7 @@ pub fn run_plan(
                 "[DRY RUN] Would invoke SM with pi --skill bmad-create-epics-and-stories",
             );
         } else {
-            let result = invoke_agent(
+            let result = invoke_agent_plan(
                 config,
                 "sm",
                 &model,
@@ -121,7 +121,7 @@ pub fn run_plan(
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke PO with pi --skill");
         } else {
-            let result = invoke_agent(
+            let result = invoke_agent_plan(
                 config,
                 "po",
                 &model,

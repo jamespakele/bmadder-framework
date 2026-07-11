@@ -71,6 +71,13 @@ args = [
     "--no-session",
     "--approve",
 ]
+file_arg = "@"
+
+# Optional: use moa-rust for plan phase (multi-model consensus planning)
+# Uncomment and adjust path to enable:
+# plan_command = "~/apps/moa-rust"
+# plan_args = ["run", "--skill", "{skill}"]
+# plan_file_arg = "--file"
 "#
 }
 

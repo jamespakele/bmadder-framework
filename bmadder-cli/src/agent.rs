@@ -6,13 +6,16 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
 
-/// Build a pi Command that loads a skill and processes given input files non-interactively.
+/// Build a command that loads a skill and processes given input files non-interactively.
+/// Supports both pi (@file syntax) and moa-rust (--file syntax) via config.file_arg.
+/// When `use_plan_command` is true, uses plan_command/plan_args/plan_file_arg if configured.
 pub fn build_pi_command(
     config: &Config,
     role_key: &str,
     model: &str,
     files: &[&str],
     extra_args: &[&str],
+    use_plan_command: bool,
 ) -> Result<Command, Box<dyn std::error::Error>> {
     let skill_path = config.resolve_skill_path(role_key).ok_or_else(|| {
         format!(
@@ -26,8 +29,27 @@ pub fn build_pi_command(
         )
     })?;
 
-    let mut cmd = Command::new(&config.pi_dev.command);
-    for arg in &config.pi_dev.args {
+    // Select command/args/file_arg — plan-specific or default
+    let (command, args, file_arg) = if use_plan_command && !config.pi_dev.plan_command.is_empty() {
+        (
+            &config.pi_dev.plan_command,
+            &config.pi_dev.plan_args,
+            if config.pi_dev.plan_file_arg.is_empty() {
+                &config.pi_dev.file_arg
+            } else {
+                &config.pi_dev.plan_file_arg
+            },
+        )
+    } else {
+        (
+            &config.pi_dev.command,
+            &config.pi_dev.args,
+            &config.pi_dev.file_arg,
+        )
+    };
+
+    let mut cmd = Command::new(command);
+    for arg in args {
         let resolved = arg
             .replace("{model}", model)
             .replace("{skill}", &skill_path.to_string_lossy());
@@ -36,10 +58,15 @@ pub fn build_pi_command(
     for extra in extra_args {
         cmd.arg(extra);
     }
-    // Append file references so pi sees them as initial context
+    // Append file references using the configured prefix
     for file in files {
         let path = config.project_root.join(file);
-        cmd.arg(format!("@{}", path.display()));
+        if file_arg == "@" {
+            cmd.arg(format!("@{}", path.display()));
+        } else {
+            cmd.arg(file_arg);
+            cmd.arg(path);
+        }
     }
     cmd.current_dir(&config.project_root);
     cmd.stdin(Stdio::null());
@@ -58,7 +85,29 @@ pub fn invoke_agent(
     files: &[&str],
     extra_args: &[&str],
 ) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
-    let mut cmd = build_pi_command(config, role_key, model, files, extra_args)?;
+    invoke_agent_with(config, role_key, model, files, extra_args, false)
+}
+
+/// Like invoke_agent but uses plan-specific command/args if configured.
+pub fn invoke_agent_plan(
+    config: &Config,
+    role_key: &str,
+    model: &str,
+    files: &[&str],
+    extra_args: &[&str],
+) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
+    invoke_agent_with(config, role_key, model, files, extra_args, true)
+}
+
+fn invoke_agent_with(
+    config: &Config,
+    role_key: &str,
+    model: &str,
+    files: &[&str],
+    extra_args: &[&str],
+    use_plan_command: bool,
+) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
+    let mut cmd = build_pi_command(config, role_key, model, files, extra_args, use_plan_command)?;
 
     let output = cmd.spawn()?.wait_with_output()?;
 

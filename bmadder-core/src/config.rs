@@ -83,6 +83,19 @@ pub struct PiDevConfig {
     pub command: String,
     #[serde(default = "default_pi_args")]
     pub args: Vec<String>,
+    /// How to pass context files: "@" for pi (default), "--file" for moa-rust.
+    #[serde(default = "default_file_arg")]
+    pub file_arg: String,
+    /// Optional: separate command for plan phase (e.g. moa-rust for multi-model planning).
+    /// If empty, uses `command`.
+    #[serde(default)]
+    pub plan_command: String,
+    /// Optional: separate args for plan phase. If empty, uses `args`.
+    #[serde(default)]
+    pub plan_args: Vec<String>,
+    /// Optional: file_arg for plan phase. If empty, uses `file_arg`.
+    #[serde(default)]
+    pub plan_file_arg: String,
 }
 
 fn default_pi_command() -> String {
@@ -101,6 +114,10 @@ fn default_pi_args() -> Vec<String> {
         "--no-session".into(),
         "--approve".into(),
     ]
+}
+
+fn default_file_arg() -> String {
+    "@".into()
 }
 
 /// Which pipeline phase is being executed.
