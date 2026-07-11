@@ -321,6 +321,21 @@ fn process_sm_po_loop(
             &["--system-prompt", &po_prompt],
         )?;
 
+        // If using moa-rust for plan, check if PO consensus was produced
+        // and run pi to apply the decision to the story file
+        let after_po_first = story_io::parse_story_file(&story.path)?;
+        if after_po_first.frontmatter.status == StoryStatus::Draft
+            || after_po_first.frontmatter.status == StoryStatus::Revise
+        {
+            if let Some(consensus) = find_latest_moa_output(config) {
+                logging::info(&format!(
+                    "Found PO consensus: {}. Applying to story file...",
+                    consensus.display()
+                ));
+                apply_po_consensus(config, &consensus, &story, &po_refs)?;
+            }
+        }
+
         // Check status after PO review
         let after_po = story_io::parse_story_file(&story.path)?;
         if after_po.frontmatter.status == StoryStatus::ReadyForDev {
@@ -689,6 +704,74 @@ Rules:
     } else {
         logging::warn(&format!(
             "Formatting pass reported failure: {:?}",
+            result.error
+        ));
+    }
+
+    Ok(())
+}
+
+/// Run pi to apply a moa-rust PO review consensus to the story file.
+/// Reads the consensus decision (APPROVE → READY_FOR_DEV, or REVISE) and
+/// updates the story file accordingly.
+fn apply_po_consensus(
+    config: &Config,
+    consensus_path: &Path,
+    story: &Story,
+    context_files: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let consensus_rel = consensus_path
+        .strip_prefix(&config.project_root)
+        .unwrap_or(consensus_path)
+        .to_string_lossy()
+        .to_string();
+
+    let story_rel = story
+        .path
+        .strip_prefix(&config.project_root)
+        .unwrap_or(&story.path)
+        .to_string_lossy()
+        .to_string();
+
+    let format_prompt = format!(
+        r#"You are the Product Owner applying a consensus review decision to a story file.
+
+A multi-model consensus has been generated for this story. Read it and apply the decision.
+
+Consensus document: @{consensus}
+Story file: @{story}
+
+Rules:
+- Read the consensus decision: APPROVE or REVISE
+- If APPROVED: update story frontmatter to status: "READY_FOR_DEV", po_alignment: "APPROVED"
+  - Append under ## PO Alignment: "PO APPROVED: [brief rationale from consensus]"
+- If REVISE: update story frontmatter to status: "REVISE", po_alignment: "REVISE"
+  - Append under ## PO Alignment: "PO REVISE: [numbered list of issues from consensus]"
+- Do NOT implement any code. Do NOT touch other story files.
+- Log to _bmad/logs/activity.log.
+"#,
+        consensus = consensus_rel,
+        story = story_rel,
+    );
+
+    let mut all_files: Vec<&str> = context_files.to_vec();
+    all_files.push(&consensus_rel);
+
+    logging::info("Running pi to apply PO consensus to story file...");
+    let model = config.resolve_model(Phase::Plan, None);
+    let result = invoke_agent(
+        config,
+        "po",
+        &model,
+        &all_files,
+        &["--system-prompt", &format_prompt],
+    )?;
+
+    if result.success {
+        logging::ok("PO consensus applied to story file.");
+    } else {
+        logging::warn(&format!(
+            "PO consensus application reported failure: {:?}",
             result.error
         ));
     }
