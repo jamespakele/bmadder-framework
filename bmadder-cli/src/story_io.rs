@@ -345,19 +345,39 @@ Test body content.
         let stories_dir = dir.path().join("stories");
         fs::create_dir_all(&stories_dir).unwrap();
 
+        // Valid story — no errors
         write_story(
             &stories_dir.join("story-0001-ok.md"),
             "STORY-0001",
             StoryStatus::Draft,
         );
 
-        // Write a file with missing story_id
-        let bad = stories_dir.join("story-0002-bad.md");
-        fs::write(&bad, "---\ntitle: \"Bad\"\nstatus: DRAFT\n---\n\nbody\n").unwrap();
+        // File with missing title — should produce a validation error.
+        // story_id is auto-derived from the filename, so it won't be empty,
+        // but title has no fallback and should be flagged.
+        let no_title = stories_dir.join("story-0002-no-title.md");
+        fs::write(
+            &no_title,
+            "---\nstory_id: \"STORY-0002\"\nstatus: DRAFT\n---\n\nbody\n",
+        )
+        .unwrap();
+
+        // File with broken YAML — should produce a parse error.
+        let broken = stories_dir.join("story-0003-broken.md");
+        fs::write(&broken, "---\nstory_id: [unclosed\n---\n\nbody\n").unwrap();
 
         let errors = validate_stories(&stories_dir).unwrap();
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].contains("story_id"));
+        assert_eq!(errors.len(), 2, "expected 2 errors, got: {:?}", errors);
+        assert!(
+            errors.iter().any(|e| e.contains("title")),
+            "expected a title error, got: {:?}",
+            errors
+        );
+        assert!(
+            errors.iter().any(|e| e.contains("parse error")),
+            "expected a parse error, got: {:?}",
+            errors
+        );
     }
 
     #[test]

@@ -1,6 +1,7 @@
-use crate::agent::invoke_agent;
+use crate::agent::invoke_agent_qa;
 use crate::git;
 use crate::logging;
+use crate::moa;
 use crate::prompts;
 use crate::spec;
 use crate::story_io;
@@ -67,7 +68,7 @@ pub fn run_qa(
             continue;
         }
 
-        invoke_agent(
+        invoke_agent_qa(
             config,
             "qa",
             &model,
@@ -75,7 +76,26 @@ pub fn run_qa(
             &["--system-prompt", &prompt],
         )?;
 
-        // AFTER agent returns, read status from disk (bash enforcer pattern)
+        // Two-phase moa-rust pattern: moa-rust writes a consensus document
+        // to output/ but does not modify the story file. When QA runs via
+        // moa-rust and the story is still PENDING_QA, run a pi pass to read
+        // the consensus and apply the PASS/FAIL decision to the story.
+        let after_invoke = story_io::parse_story_file(&story.path)?;
+        if after_invoke.frontmatter.status == StoryStatus::PendingQA
+            && !config.pi_dev.qa_command.is_empty()
+        {
+            if let Some(consensus) = moa::find_latest_moa_output(config) {
+                logging::info(&format!(
+                    "Found QA consensus: {}. Applying to story file...",
+                    consensus.display()
+                ));
+                moa::apply_qa_consensus(config, &consensus, story, &file_refs)?;
+            } else {
+                logging::warn("QA ran via moa-rust but no consensus output found; status unchanged.");
+            }
+        }
+
+        // AFTER agent (and optional consensus apply) returns, read status from disk
         let updated = story_io::parse_story_file(&story.path)?;
         let status = updated.frontmatter.status;
 

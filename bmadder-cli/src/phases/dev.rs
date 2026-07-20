@@ -80,6 +80,11 @@ pub fn run_dev(
 
         let mut story_done = false;
         let mut iterations = 0u32;
+        // Circuit breaker: track which verification checks keep failing.
+        // If the same checks fail 3 times in a row, advance to PENDING_QA
+        // anyway — the dev agent can't fix a template/format problem by re-running.
+        let mut repeated_fail_count = 0u32;
+        let mut last_failures: Vec<String> = Vec::new();
 
         while iterations < max_iters {
             iterations += 1;
@@ -143,6 +148,40 @@ pub fn run_dev(
                             "VERIFY_FAIL",
                             &format!("Checks failed: {}", failures.join(", ")),
                         )?;
+
+                        // Circuit breaker: if the same checks fail repeatedly,
+                        // the dev agent can't fix it (likely a template/format
+                        // mismatch). Advance to PENDING_QA and let QA handle it.
+                        let current_failures: Vec<String> = verification
+                            .failures()
+                            .iter()
+                            .map(|c| c.name.clone())
+                            .collect();
+                        if current_failures == last_failures {
+                            repeated_fail_count += 1;
+                        } else {
+                            repeated_fail_count = 1;
+                            last_failures = current_failures.clone();
+                        }
+                        if repeated_fail_count >= 3 {
+                            logging::warn(&format!(
+                                "Story {} failed same checks {} times — advancing to PENDING_QA (circuit breaker)",
+                                story_id, repeated_fail_count
+                            ));
+                            logging::log_activity(
+                                config,
+                                "ORCH",
+                                story_id,
+                                "CIRCUIT_BREAKER",
+                                &format!(
+                                    "Same checks failed {}x — advancing to PENDING_QA",
+                                    repeated_fail_count
+                                ),
+                            )?;
+                            story_io::update_story_status(&story.path, StoryStatus::PendingQA)?;
+                            story_done = true;
+                            break;
+                        }
                         // Don't advance — keep in IN_DEV for another iteration
                         story_io::update_story_status(&story.path, StoryStatus::InDev)?;
                         continue;

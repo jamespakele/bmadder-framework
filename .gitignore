@@ -15,3 +15,6 @@ _bmad/progress.txt
 
 # Headless skills are generated — commit them intentionally
 # (they are committed so users don't need to run sync on first clone)
+
+# Agent skills (moved from .agent/skills to .agents/skills — local only)
+.agents/

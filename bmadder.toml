@@ -1,0 +1,83 @@
+# BMADder Orchestrator Configuration
+# See docs/standards/ for configuration reference.
+
+[paths]
+skills_dir = ".agent/skills"
+stories_dir = "docs/backlog/stories"
+state_dir = "_bmad"
+frozen_dir = "_bmad/frozen"
+deferred_work_file = "_bmad/deferred-work.md"
+
+[models]
+glm52 = "ollama/glm-5.2:cloud"
+minim3 = "ollama/minimax-m3:cloud"
+dsv4pro = "ollama/deepseek-v4-pro:cloud"
+kimi27 = "ollama/kimi-k2.7-code:cloud"
+
+[roles.sm]
+personality = "bmad-agent-dev"
+model = "glm52"
+skill = "bmad-create-epics-and-stories"
+
+[roles.po]
+personality = "bmad-agent-dev"
+model = "minim3"
+skill = "bmad-create-epics-and-stories"
+
+[roles.dev]
+personality = "bmad-agent-dev"
+model = "kimi27"
+skill = "bmad-dev-story"
+
+[roles.quick]
+personality = "bmad-agent-dev"
+model = "glm52"
+skill = "bmad-quick-dev"
+
+[roles.qa]
+personality = "bmad-agent-dev"
+model = "glm52"
+skill = "bmad-code-review"
+
+[agent_hints]
+specialist = "kimi27"
+generalist = "dsv4pro"
+planning-qa = "glm52"
+
+[defaults]
+max_dev_iterations = 10
+max_sm_iterations = 5
+max_qa_passes = 3
+story_timeout_seconds = 1800
+gemini_cooldown_seconds = 15
+gemini_initial_backoff = 30
+
+[pi_dev]
+command = "pi"
+args = [
+    "--model", "{model}",
+    "--skill", "{skill}",
+    "--print",
+    "--mode", "json",
+    "--no-session",
+    "--approve",
+]
+file_arg = "@"
+
+# Optional: use moa-rust for plan phase (multi-model consensus planning)
+# Uncomment and adjust path to enable:
+# plan_command = "~/apps/moa-rust"
+# plan_args = ["run", "--skill", "{skill}"]
+# plan_file_arg = "--file"
+
+# --- Hermes Kanban bridge integration ---
+# When bridge_report = true, BMADder auto-emits JSONL events AND spawns the
+# Python bridge subprocess so story state is mirrored to Hermes automatically.
+# Either reporting is on or it's off.
+[hermes]
+bridge_report = false
+project_slug = ""
+hermes_home = "~/.hermes"
+# rest_url = ""               # default: http://127.0.0.1:8000
+# bridge_script = ""          # default: <project>/scripts/bmadder-kanban-bridge.py
+# bridge_poll_seconds = 10

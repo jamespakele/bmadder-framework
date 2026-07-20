@@ -1,6 +1,6 @@
+use bmadder_core::config::Config;
 use crate::logging;
 use bmadder_core::agent::PiDevOutput;
-use bmadder_core::config::Config;
 use regex::Regex;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -22,14 +22,14 @@ fn expand_tilde(path: &str) -> String {
 
 /// Build a command that loads a skill and processes given input files non-interactively.
 /// Supports both pi (@file syntax) and moa-rust (--file syntax) via config.file_arg.
-/// When `use_plan_command` is true, uses plan_command/plan_args/plan_file_arg if configured.
+/// `mode` selects phase-specific command/args/file_arg overrides (Plan, QA) when configured.
 pub fn build_pi_command(
     config: &Config,
     role_key: &str,
     model: &str,
     files: &[&str],
     extra_args: &[&str],
-    use_plan_command: bool,
+    mode: CommandMode,
 ) -> Result<Command, Box<dyn std::error::Error>> {
     let skill_path = config.resolve_skill_path(role_key).ok_or_else(|| {
         format!(
@@ -43,25 +43,32 @@ pub fn build_pi_command(
         )
     })?;
 
-    // Select command/args/file_arg — plan-specific or default
-    let (raw_command, args, file_arg) =
-        if use_plan_command && !config.pi_dev.plan_command.is_empty() {
-            (
-                &config.pi_dev.plan_command,
-                &config.pi_dev.plan_args,
-                if config.pi_dev.plan_file_arg.is_empty() {
-                    &config.pi_dev.file_arg
-                } else {
-                    &config.pi_dev.plan_file_arg
-                },
-            )
-        } else {
-            (
-                &config.pi_dev.command,
-                &config.pi_dev.args,
-                &config.pi_dev.file_arg,
-            )
-        };
+    // Select command/args/file_arg — phase-specific override or default
+    let (raw_command, args, file_arg) = match mode {
+        CommandMode::Plan if !config.pi_dev.plan_command.is_empty() => (
+            &config.pi_dev.plan_command,
+            &config.pi_dev.plan_args,
+            if config.pi_dev.plan_file_arg.is_empty() {
+                &config.pi_dev.file_arg
+            } else {
+                &config.pi_dev.plan_file_arg
+            },
+        ),
+        CommandMode::Qa if !config.pi_dev.qa_command.is_empty() => (
+            &config.pi_dev.qa_command,
+            &config.pi_dev.qa_args,
+            if config.pi_dev.qa_file_arg.is_empty() {
+                &config.pi_dev.file_arg
+            } else {
+                &config.pi_dev.qa_file_arg
+            },
+        ),
+        _ => (
+            &config.pi_dev.command,
+            &config.pi_dev.args,
+            &config.pi_dev.file_arg,
+        ),
+    };
 
     // Expand ~ in command path (Rust's Command::new doesn't do shell expansion)
     let command = expand_tilde(raw_command);
@@ -103,7 +110,7 @@ pub fn invoke_agent(
     files: &[&str],
     extra_args: &[&str],
 ) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
-    invoke_agent_with(config, role_key, model, files, extra_args, false)
+    invoke_agent_with(config, role_key, model, files, extra_args, CommandMode::Default)
 }
 
 /// Like invoke_agent but uses plan-specific command/args if configured.
@@ -114,8 +121,32 @@ pub fn invoke_agent_plan(
     files: &[&str],
     extra_args: &[&str],
 ) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
-    invoke_agent_with(config, role_key, model, files, extra_args, true)
+    invoke_agent_with(config, role_key, model, files, extra_args, CommandMode::Plan)
 }
+
+/// Like invoke_agent but uses QA-specific command/args if configured
+/// (e.g. moa-rust for multi-model QA review).
+pub fn invoke_agent_qa(
+    config: &Config,
+    role_key: &str,
+    model: &str,
+    files: &[&str],
+    extra_args: &[&str],
+) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
+    invoke_agent_with(config, role_key, model, files, extra_args, CommandMode::Qa)
+}
+
+/// Which pipeline phase's command template to use for an invocation.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CommandMode {
+    /// Default `[pi_dev]` command/args.
+    Default,
+    /// Plan-phase override (`plan_command` / `plan_args` / `plan_file_arg`).
+    Plan,
+    /// QA-phase override (`qa_command` / `qa_args` / `qa_file_arg`).
+    Qa,
+}
+
 
 fn invoke_agent_with(
     config: &Config,
@@ -123,9 +154,9 @@ fn invoke_agent_with(
     model: &str,
     files: &[&str],
     extra_args: &[&str],
-    use_plan_command: bool,
+    mode: CommandMode,
 ) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
-    let mut cmd = build_pi_command(config, role_key, model, files, extra_args, use_plan_command)?;
+    let mut cmd = build_pi_command(config, role_key, model, files, extra_args, mode)?;
 
     let output = cmd.spawn()?.wait_with_output()?;
 

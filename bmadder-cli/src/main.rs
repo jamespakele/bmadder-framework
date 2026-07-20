@@ -3,6 +3,7 @@ mod bootstrap;
 mod git;
 mod logging;
 mod phases;
+mod moa;
 mod prompts;
 mod spec;
 mod story_io;
@@ -12,6 +13,82 @@ use bmadder_core::config::Config;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process;
+use std::process::{Child, Stdio};
+use std::process::Command as StdCommand;
+
+/// Guard that owns a spawned bridge subprocess and terminates it on drop.
+/// Ensures the bridge dies when BMADder exits (normal, error, or panic
+/// unwinding). Held across the pipeline dispatch in `main`.
+struct BridgeGuard {
+    child: Option<Child>,
+}
+
+impl BridgeGuard {
+    /// Spawn the Python bridge subprocess for the given config. Returns a guard
+    /// that owns the child; on drop, the child is terminated. Returns None
+    /// (with a stderr warning) if the script is missing or spawn fails.
+    fn spawn(config: &Config) -> Option<Self> {
+        if !config.hermes.bridge_report {
+            return None;
+        }
+        // Dry-run: don't spawn the bridge — no real reporting to do.
+        if config.dry_run {
+            eprintln!("[hermes] --dry-run: not spawning bridge subprocess");
+            return None;
+        }
+        let script = match config.hermes.bridge_script_path(&config.project_root) {
+            Some(p) => p,
+            None => {
+                eprintln!(
+                    "warn: [hermes].bridge_report = true but bridge script not found. \
+                     Expected at <project>/scripts/bmadder-kanban-bridge.py or set \
+                     [hermes].bridge_script. Skipping bridge launch."
+                );
+                return None;
+            }
+        };
+        let board = config.hermes.board_slug(&config.project_root);
+        let poll = config.hermes.bridge_poll_seconds;
+        let project = &config.project_root;
+        eprintln!(
+            "[hermes] launching bridge: python3 {} {} --board {} --poll {}",
+            script.display(),
+            project.display(),
+            board,
+            poll
+        );
+        match StdCommand::new("python3")
+            .arg(&script)
+            .arg(project)
+            .args(["--board", &board])
+            .args(["--poll", &poll.to_string()])
+            // Inherit stderr so bridge warnings surface alongside BMADder output.
+            // Pipe stdout (the bridge doesn't use it for anything user-facing).
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit())
+            .spawn()
+        {
+            Ok(child) => Some(BridgeGuard { child: Some(child) }),
+            Err(e) => {
+                eprintln!("warn: failed to spawn bridge subprocess: {}", e);
+                None
+            }
+        }
+    }
+}
+
+impl Drop for BridgeGuard {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let pid = child.id();
+            // SIGKILL the bridge — it's stateless and restartable, so a hard
+            // kill is safe and avoids a libc dependency for SIGTERM.
+            let _ = child.kill();
+            let _ = child.wait();
+            eprintln!("[hermes] bridge subprocess (pid {}) stopped", pid);
+        }
+    }
+}
 
 /// BMADder — AI-driven story management and implementation pipeline.
 #[derive(Parser)]
@@ -72,6 +149,9 @@ struct Cli {
     /// Output as JSON instead of colored terminal output
     #[arg(global = true, long = "json")]
     json: bool,
+    /// Emit structured JSONL events to _bmad/logs/events.jsonl (for the Hermes bridge)
+    #[arg(global = true, long = "jsonl-events")]
+    jsonl_events: bool,
 
     #[command(subcommand)]
     command: Command,
@@ -185,6 +265,9 @@ fn main() {
     if cli.dry_run {
         config.dry_run = true;
     }
+    if cli.jsonl_events {
+        config.jsonl_events = true;
+    }
     if cli.json {
         config.json_output = true;
     }
@@ -205,6 +288,10 @@ fn main() {
     if let Some(n) = cli.max_dev_iter {
         config.defaults.max_dev_iterations = n;
     }
+
+    // If [hermes].bridge_report = true, spawn the Python bridge subprocess.
+    // The guard kills it when main exits (normal, error, or panic).
+    let _bridge_guard = BridgeGuard::spawn(&config);
 
     // Dispatch to phase
     let result = match &cli.command {

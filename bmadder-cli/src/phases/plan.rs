@@ -1,5 +1,6 @@
 use crate::agent::invoke_agent_plan;
 use crate::logging;
+use crate::moa;
 use crate::prompts;
 use crate::spec;
 use crate::story_io;
@@ -58,6 +59,10 @@ pub fn run_plan(
 
         // Ensure stories directory exists
         std::fs::create_dir_all(&config.paths.stories_dir)?;
+        // Snapshot existing stories so we can tell whether the SM invoke
+        // created new files directly (pi path) or only wrote a moa consensus
+        // (moa-rust path) that still needs a formatting pass.
+        let before_sm = story_io::list_stories(&config.paths.stories_dir)?;
 
         if config.dry_run {
             logging::info(
@@ -75,6 +80,28 @@ pub fn run_plan(
                 "SM result: success={} summary={:?}",
                 result.success, result.output_summary
             ));
+        }
+
+        // Two-phase moa-rust pattern for batch SM: moa-rust writes a consensus
+        // document to output/ but does not create story files. When SM ran via
+        // moa-rust and no NEW story file appeared (compared against the pre-invoke
+        // snapshot — robust to pre-existing DRAFT/REVISE stories from prior runs),
+        // run a pi pass to format the consensus into individual story files.
+        if !config.dry_run && !config.pi_dev.plan_command.is_empty() {
+            let after_sm = story_io::list_stories(&config.paths.stories_dir)?;
+            if story_io::detect_new_story_file(&before_sm, &after_sm).is_none() {
+                if let Some(consensus) = moa::find_latest_moa_output(config) {
+                    logging::info(&format!(
+                        "Found SM consensus: {}. Formatting into story files...",
+                        consensus.display()
+                    ));
+                    moa::format_consensus_into_stories(config, &consensus, &file_refs)?;
+                } else {
+                    logging::warn(
+                        "SM ran via moa-rust but produced no new stories and no consensus output found.",
+                    );
+                }
+            }
         }
         logging::log_marker(config, "END", "PRD_SHARD")?;
         logging::log_activity(config, "SM", "-", "SM_DONE", "Sharding complete")?;
@@ -118,7 +145,24 @@ pub fn run_plan(
         )?;
 
         let prompt = prompts::po_batch_prompt();
-        let files: Vec<String> = prompts::po_batch_files(config);
+        // Snapshot the DRAFT stories BEFORE this PO run. moa-rust backends have
+        // no file tools, so the consensus can only review stories passed as
+        // --file context — without them the APPROVE/REVISE verdict would be
+        // ungrounded. The same refs are forwarded to the apply pass so pi can
+        // update the story frontmatter it just reviewed.
+        let drafts_before_po =
+            story_io::get_stories_by_status(&config.paths.stories_dir, StoryStatus::Draft)?;
+        let mut files: Vec<String> = prompts::po_batch_files(config);
+        for story in &drafts_before_po {
+            files.push(
+                story
+                    .path
+                    .strip_prefix(&config.project_root)
+                    .unwrap_or(&story.path)
+                    .to_string_lossy()
+                    .to_string(),
+            );
+        }
         let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
 
         if config.dry_run {
@@ -135,6 +179,26 @@ pub fn run_plan(
                 "PO result: success={} summary={:?}",
                 result.success, result.output_summary
             ));
+        }
+        // Two-phase moa-rust pattern for batch PO: moa-rust writes a consensus
+        // reviewing the DRAFT stories but does not update their frontmatter.
+        // When PO ran via moa-rust and this run had DRAFT candidates (snapshotted
+        // before the invoke — robust to pre-existing READY_FOR_DEV stories),
+        // run a pi pass to apply the APPROVE/REVISE decisions. The apply prompt
+        // limits edits to DRAFT stories, so re-running on a mixed directory is safe.
+        if !config.dry_run && !config.pi_dev.plan_command.is_empty() && !drafts_before_po.is_empty() {
+            if let Some(consensus) = moa::find_latest_moa_output(config) {
+                logging::info(&format!(
+                    "Found PO consensus: {}. Applying to {} DRAFT story/stories...",
+                    consensus.display(),
+                    drafts_before_po.len()
+                ));
+                moa::apply_po_consensus_batch(config, &consensus, &file_refs)?;
+            } else {
+                logging::warn(
+                    "PO ran via moa-rust but no consensus output found; DRAFT stories unchanged.",
+                );
+            }
         }
         logging::log_marker(config, "END", "PO_REVIEW")?;
         logging::log_activity(config, "PO", "-", "PO_DONE", "Review complete")?;

@@ -143,23 +143,50 @@ pub fn verify_after_dev(story: &Story, frozen_spec: Option<&str>) -> Verificatio
         },
     });
 
-    // Check 3: File List must exist and have entries
+    // Check 3: File List must exist and have entries.
+    // Falls back to scanning Implementation Notes for file-path-like lines
+    // (e.g. "- src/lib.rs", "- assets/css/theme.css") when the story
+    // template doesn't use a dedicated ## File List section.
     let file_list = sections.get("File List").cloned().unwrap_or_default();
-    let files_ok = file_list.lines().filter(|l| !l.trim().is_empty()).count() > 0;
+    let file_list_count = file_list.lines().filter(|l| !l.trim().is_empty()).count();
+    let (files_ok, files_detail) = if file_list_count > 0 {
+        (true, format!("{} file(s) listed", file_list_count))
+    } else if !impl_notes.trim().is_empty() {
+        // Fallback: look for file-path-like bullet entries in Implementation Notes
+        let file_like: Vec<&str> = impl_notes
+            .lines()
+            .filter(|l| {
+                let t = l.trim_start();
+                t.starts_with("- ") && looks_like_file_path(t[2..].trim())
+            })
+            .collect();
+        if !file_like.is_empty() {
+            (
+                true,
+                format!("{} file(s) found in Implementation Notes", file_like.len()),
+            )
+        } else {
+            (
+                false,
+                "No file list found (neither ## File List nor file paths in Implementation Notes)"
+                    .to_string(),
+            )
+        }
+    } else {
+        (
+            false,
+            "File List section missing and Implementation Notes empty".to_string(),
+        )
+    };
     checks.push(VerificationCheck {
         name: "file_list".to_string(),
         passed: files_ok,
-        detail: if files_ok {
-            format!(
-                "{} file(s) listed",
-                file_list.lines().filter(|l| !l.trim().is_empty()).count()
-            )
-        } else {
-            "File List section missing or empty".to_string()
-        },
+        detail: files_detail,
     });
 
-    // Check 4: All acceptance criteria checkboxes are checked
+    // Check 4: All acceptance criteria checkboxes are checked.
+    // If the AC section uses Given/When/Then prose (no checkboxes at all),
+    // we skip this check — only fail when checkboxes EXIST and some are unchecked.
     let ac_section = sections
         .get("Acceptance Criteria")
         .cloned()
@@ -177,11 +204,17 @@ pub fn verify_after_dev(story: &Story, frozen_spec: Option<&str>) -> Verificatio
     let done: usize = checkable
         .filter(|l| l.trim_start().starts_with("- [x]"))
         .count();
-    let ac_ok = total > 0 && done == total;
+    // Pass if: all checkboxes checked, OR no checkboxes at all (prose-style AC)
+    let ac_ok = total == 0 || done == total;
+    let ac_detail = if total == 0 {
+        "No checkboxes found — prose-style AC, skipping checkbox check".to_string()
+    } else {
+        format!("{}/{} acceptance criteria checked", done, total)
+    };
     checks.push(VerificationCheck {
         name: "acceptance_criteria".to_string(),
         passed: ac_ok,
-        detail: format!("{}/{} acceptance criteria checked", done, total),
+        detail: ac_detail,
     });
 
     // Check 5: Frozen spec must still exist (if provided)
@@ -206,6 +239,18 @@ pub fn verify_after_dev(story: &Story, frozen_spec: Option<&str>) -> Verificatio
 
     let passed = checks.iter().all(|c| c.passed);
     VerificationResult { passed, checks }
+}
+
+/// Heuristic: does a string look like a file path?
+/// Matches paths with extensions or with path separators.
+fn looks_like_file_path(s: &str) -> bool {
+    // Strip backticks and leading/trailing whitespace
+    let s = s.trim().trim_matches('`');
+    if s.is_empty() {
+        return false;
+    }
+    // Contains a path separator and either an extension or looks path-like
+    s.contains('/') && (s.contains('.') || s.contains('/')) || (s.contains('.') && !s.contains(' '))
 }
 
 /// Verify a story after QA agent returns.
@@ -387,6 +432,63 @@ Partial implementation
             .failures()
             .iter()
             .any(|c| c.name == "acceptance_criteria"));
+    }
+
+    #[test]
+    fn verify_dev_passes_with_prose_ac_no_checkboxes() {
+        // Stories with Given/When/Then prose ACs and no checkboxes
+        // should pass the acceptance_criteria check.
+        let body = r#"
+## Acceptance Criteria
+
+**Given** the theme file exists
+**When** the story is implemented
+**Then** both themes are defined
+
+## Implementation Notes
+Implemented theme bundles.
+
+- assets/css/theme.css
+- src/templates/layout.rs
+"#;
+        let story = make_story(body, StoryStatus::PendingQA);
+        let result = verify_after_dev(&story, None);
+        assert!(result.passed, "Expected pass: {:?}", result.failures());
+    }
+
+    #[test]
+    fn verify_dev_passes_with_file_list_in_impl_notes() {
+        // Stories without a ## File List section but with file paths
+        // listed in ## Implementation Notes should pass the file_list check.
+        let body = r#"
+## Acceptance Criteria
+- [x] AC1 works
+
+## Implementation Notes
+Implemented the thing.
+
+- src/lib.rs
+- tests/thing.rs
+"#;
+        let story = make_story(body, StoryStatus::PendingQA);
+        let result = verify_after_dev(&story, None);
+        assert!(result.passed, "Expected pass: {:?}", result.failures());
+    }
+
+    #[test]
+    fn verify_dev_fails_with_no_files_anywhere() {
+        // No ## File List and no file paths in Implementation Notes
+        let body = r#"
+## Acceptance Criteria
+- [x] AC1 works
+
+## Implementation Notes
+Implemented the thing. No files listed.
+"#;
+        let story = make_story(body, StoryStatus::PendingQA);
+        let result = verify_after_dev(&story, None);
+        assert!(!result.passed);
+        assert!(result.failures().iter().any(|c| c.name == "file_list"));
     }
 
     #[test]

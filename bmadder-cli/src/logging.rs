@@ -2,7 +2,92 @@ use bmadder_core::config::Config;
 use bmadder_core::story::StoryStatus;
 use chrono::Utc;
 use colored::Colorize;
+use serde::Serialize;
 use std::io::Write;
+
+/// A structured event written to `_bmad/logs/events.jsonl` when `--jsonl-events` is enabled.
+/// This is the machine-readable counterpart to the human-readable activity.log line.
+#[derive(Debug, Clone, Serialize)]
+pub struct StoryEvent {
+    /// ISO 8601 timestamp (UTC).
+    pub ts: String,
+    /// Who produced the event (e.g. "ORCH", "SM", "DEV", "QA").
+    pub actor: String,
+    /// Story id the event pertains to (may be empty for run-level events).
+    pub story_id: String,
+    /// Event type (e.g. "STATUS_CHANGE", "QA_PASS", "QA_FAIL", "COMMIT", "ALL_DONE").
+    pub event: String,
+    /// Previous status (None for non-transition events).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub from: Option<String>,
+    /// New status (None for non-transition events).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub to: Option<String>,
+    /// Free-text detail (role/model info, commit hash, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+impl StoryEvent {
+    /// Build a status-transition event.
+    pub fn status_change(actor: &str, story_id: &str, from: &str, to: &str, detail: &str) -> Self {
+        Self {
+            ts: Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            actor: actor.to_string(),
+            story_id: story_id.to_string(),
+            event: "STATUS_CHANGE".to_string(),
+            from: Some(from.to_string()),
+            to: Some(to.to_string()),
+            detail: Some(detail.to_string()),
+        }
+    }
+
+    /// Build a generic (non-transition) event.
+    pub fn simple(actor: &str, story_id: &str, event: &str, detail: &str) -> Self {
+        Self {
+            ts: Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string(),
+            actor: actor.to_string(),
+            story_id: story_id.to_string(),
+            event: event.to_string(),
+            from: None,
+            to: None,
+            detail: Some(detail.to_string()),
+        }
+    }
+}
+
+/// Append a structured JSONL event to `_bmad/logs/events.jsonl`.
+///
+/// Fire-and-forget: write failures are logged to stderr and never block the caller.
+/// No-op when `config.jsonl_events` is false.
+pub fn log_event(config: &Config, event: &StoryEvent) {
+    if !config.jsonl_events {
+        return;
+    }
+    let path = config.events_jsonl_path();
+    if let Some(parent) = path.parent() {
+        if let Err(e) = std::fs::create_dir_all(parent) {
+            eprintln!("warn: jsonl-events: could not create {}: {}", parent.display(), e);
+            return;
+        }
+    }
+    let mut line = match serde_json::to_string(event) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("warn: jsonl-events: serialize error: {}", e);
+            return;
+        }
+    };
+    line.push('\n');
+    match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+        Ok(mut f) => {
+ if let Err(e) = f.write_all(line.as_bytes()) {
+                eprintln!("warn: jsonl-events: write error: {}", e);
+            }
+        }
+        Err(e) => eprintln!("warn: jsonl-events: open error on {}: {}", path.display(), e),
+    }
+}
 
 /// Append a line to the activity log.
 pub fn log_activity(
@@ -26,6 +111,11 @@ pub fn log_activity(
         .append(true)
         .open(&path)?;
     f.write_all(line.as_bytes())?;
+    // Also emit a structured JSONL event when --jsonl-events is enabled.
+    log_event(
+        config,
+        &StoryEvent::simple(actor, story_id, event, detail),
+    );
     Ok(())
 }
 

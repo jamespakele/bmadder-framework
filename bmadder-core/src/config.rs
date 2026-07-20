@@ -96,6 +96,152 @@ pub struct PiDevConfig {
     /// Optional: file_arg for plan phase. If empty, uses `file_arg`.
     #[serde(default)]
     pub plan_file_arg: String,
+    /// Optional: separate command for QA phase (e.g. moa-rust for multi-model review).
+    /// If empty, uses `command`.
+    #[serde(default)]
+    pub qa_command: String,
+    /// Optional: separate args for QA phase. If empty, uses `args`.
+    #[serde(default)]
+    pub qa_args: Vec<String>,
+    /// Optional: file_arg for QA phase. If empty, uses `file_arg`.
+    #[serde(default)]
+    pub qa_file_arg: String,
+}
+
+/// Hermes Kanban bridge integration: whether BMADder reports story state to a
+/// Hermes Kanban board, which board, and which Hermes install to talk to.
+///
+/// When `bridge_report = true`, BMADder auto-enables JSONL event emission
+/// (`config.jsonl_events = true`) and spawns the Python bridge subprocess so
+/// story state is mirrored to Hermes automatically. `hermes_home` points to
+/// the Hermes install on disk (e.g. "~/.hermes") so the bridge can locate the
+/// `hermes` CLI binary. `rest_url` optionally overrides the REST API endpoint
+/// for status updates (default http://127.0.0.1:8000).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HermesConfig {
+    /// When true, BMADder emits JSONL events and spawns the Python bridge
+    /// subprocess so story state is mirrored to Hermes automatically.
+    #[serde(default)]
+    pub bridge_report: bool,
+    /// Hermes Kanban board slug (e.g. "bmadder-framework", "ai-r3").
+    /// Empty string → derive from the project folder name at load time.
+    #[serde(default)]
+    pub project_slug: String,
+    /// Filesystem path to the Hermes install (where `hermes-agent/` lives).
+    /// Default "~/.hermes". Used by the bridge to locate the `hermes` binary
+    /// for CLI calls (`<hermes_home>/hermes-agent/venv/bin/hermes`), falling
+    /// back to `hermes` on PATH. `~` is expanded at load time.
+    #[serde(default = "default_hermes_home")]
+    pub hermes_home: String,
+    /// Optional REST API URL for status updates (the CLI has no status setter).
+    /// Empty → default http://127.0.0.1:8000. Set this for remote installs
+    /// (e.g. "https://hermes.example.com" or "http://host.docker.internal:8000").
+    #[serde(default)]
+    pub rest_url: String,
+    /// Optional path to the bridge script. Empty → look in
+    /// `<project_root>/scripts/bmadder-kanban-bridge.py`.
+    #[serde(default)]
+    pub bridge_script: String,
+    /// Bridge poll interval in seconds (default 10).
+    #[serde(default = "default_bridge_poll")]
+    pub bridge_poll_seconds: u64,
+}
+
+fn default_bridge_poll() -> u64 {
+    10
+}
+
+fn default_hermes_home() -> String {
+    "~/.hermes".into()
+}
+
+
+impl Default for HermesConfig {
+    fn default() -> Self {
+        Self {
+            bridge_report: false,
+            project_slug: String::new(),
+            hermes_home: default_hermes_home(),
+            rest_url: String::new(),
+            bridge_script: String::new(),
+            bridge_poll_seconds: default_bridge_poll(),
+        }
+    }
+}
+
+impl HermesConfig {
+    /// Expand a leading `~` to the user's home directory.
+    fn expand_home(path: &str) -> String {
+        if let Some(rest) = path.strip_prefix("~/") {
+            if let Some(home) = std::env::var_os("HOME") {
+                return Path::new(&home).join(rest).to_string_lossy().to_string();
+            }
+        } else if path == "~" {
+            if let Some(home) = std::env::var_os("HOME") {
+                return home.to_string_lossy().to_string();
+            }
+        }
+        path.to_string()
+    }
+
+    /// REST API base URL for status updates (the CLI has no status setter).
+    /// Uses `rest_url` if set; otherwise defaults to http://127.0.0.1:8000
+    /// (the Hermes gateway's default bind address).
+    pub fn rest_base(&self) -> String {
+        let url = self.rest_url.trim();
+        if url.is_empty() {
+            "http://127.0.0.1:8000".to_string()
+        } else {
+            url.trim_end_matches('/').to_string()
+        }
+    }
+
+    /// Resolve the `hermes` CLI binary path. Looks for
+    /// `<hermes_home>/hermes-agent/venv/bin/hermes` (the standard install
+    /// layout), falling back to `hermes` on PATH if not found.
+    pub fn hermes_binary(&self) -> String {
+        let home = Self::expand_home(&self.hermes_home);
+        let candidate = Path::new(&home).join("hermes-agent").join("venv").join("bin").join("hermes");
+        if candidate.exists() {
+            candidate.to_string_lossy().to_string()
+        } else {
+            "hermes".to_string()
+        }
+    }
+
+    /// Resolve the board slug: use `project_slug` if set, else derive from the
+    /// project root folder name (kebab-cased).
+    pub fn board_slug(&self, project_root: &Path) -> String {
+        if !self.project_slug.is_empty() {
+            return self.project_slug.clone();
+        }
+        project_root
+            .file_name()
+            .map(|n| n.to_string_lossy().to_lowercase().replace('_', "-"))
+            .unwrap_or_else(|| "bmadder".to_string())
+    }
+
+    /// Resolve the bridge script path. If `bridge_script` is set, use it
+    /// (relative paths resolved against the project root). Otherwise look in
+    /// `<project_root>/scripts/bmadder-kanban-bridge.py`. Returns None if the
+    /// resolved path does not exist on disk.
+    pub fn bridge_script_path(&self, project_root: &Path) -> Option<PathBuf> {
+        let candidate = if self.bridge_script.is_empty() {
+            project_root.join("scripts").join("bmadder-kanban-bridge.py")
+        } else {
+            let p = PathBuf::from(&self.bridge_script);
+            if p.is_absolute() {
+                p
+            } else {
+                project_root.join(p)
+            }
+        };
+        if candidate.exists() {
+            Some(candidate)
+        } else {
+            None
+        }
+    }
 }
 
 fn default_pi_command() -> String {
@@ -145,6 +291,8 @@ pub struct Config {
     pub defaults: DefaultsConfig,
     /// pi.dev command template.
     pub pi_dev: PiDevConfig,
+    /// Hermes Kanban bridge integration.
+    pub hermes: HermesConfig,
 
     // --- Runtime overrides (applied after TOML load) ---
     /// True when --dry-run is set.
@@ -155,6 +303,8 @@ pub struct Config {
     pub agent_override: Option<String>,
     /// Override story timeout (from --timeout).
     pub timeout_override: Option<u64>,
+    /// True when --jsonl-events is set (emit structured events to events.jsonl).
+    pub jsonl_events: bool,
 }
 
 /// Intermediate TOML representation (before path resolution).
@@ -172,6 +322,8 @@ struct ConfigToml {
     defaults: DefaultsConfig,
     #[serde(default)]
     pi_dev: PiDevConfig,
+    #[serde(default)]
+    hermes: HermesConfig,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -229,6 +381,7 @@ impl Config {
             ),
         };
 
+        let bridge_report = toml.hermes.bridge_report;
         Ok(Config {
             project_root,
             paths,
@@ -237,6 +390,10 @@ impl Config {
             agent_hints: toml.agent_hints,
             defaults: toml.defaults,
             pi_dev: toml.pi_dev,
+            hermes: toml.hermes,
+            // Auto-enable JSONL events when Hermes bridge reporting is on,
+            // so the Python bridge has structured events to read.
+            jsonl_events: bridge_report,
             dry_run: false,
             json_output: false,
             agent_override: None,
@@ -354,6 +511,11 @@ impl Config {
     /// Path to the progress log.
     pub fn progress_file_path(&self) -> PathBuf {
         self.paths.state_dir.join("progress.txt")
+    }
+
+    /// Path to the structured JSONL event log (alongside activity.log).
+    pub fn events_jsonl_path(&self) -> PathBuf {
+        self.paths.state_dir.join("logs/events.jsonl")
     }
 
     // --- helpers ---
@@ -551,5 +713,101 @@ planning-qa = "glm52"
 
         let s = config.resolve_skill_path("dev").unwrap();
         assert!(s.ends_with("bmad-dev-story"));
+    }
+
+    #[test]
+    fn parse_qa_command_override() {
+        let toml = r#"
+[pi_dev]
+command = "pi"
+args = ["--model","{model}","--skill","{skill}"]
+file_arg = "@"
+qa_command = "~/apps/moa-rust"
+qa_args = ["run","--skill","{skill}"]
+qa_file_arg = "--file"
+"#;
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("bmadder.toml");
+        std::fs::write(&config_path, toml).unwrap();
+
+        let config = Config::load(&config_path).unwrap();
+        assert_eq!(config.pi_dev.qa_command, "~/apps/moa-rust");
+        assert_eq!(config.pi_dev.qa_args, vec!["run", "--skill", "{skill}"]);
+        assert_eq!(config.pi_dev.qa_file_arg, "--file");
+        // Defaults remain intact when plan_* unset
+        assert!(config.pi_dev.plan_command.is_empty());
+        assert_eq!(config.pi_dev.command, "pi");
+        assert_eq!(config.pi_dev.file_arg, "@");
+    }
+
+    #[test]
+    fn qa_command_defaults_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("bmadder.toml");
+        std::fs::write(&config_path, "").unwrap();
+        let config = Config::load(&config_path).unwrap();
+        assert!(config.pi_dev.qa_command.is_empty());
+        assert!(config.pi_dev.qa_args.is_empty());
+        assert!(config.pi_dev.qa_file_arg.is_empty());
+    }
+
+    #[test]
+    fn hermes_config_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("bmadder.toml");
+        std::fs::write(&config_path, "").unwrap();
+        let config = Config::load(&config_path).unwrap();
+        assert!(!config.hermes.bridge_report);
+        assert_eq!(config.hermes.hermes_home, "~/.hermes");
+        assert_eq!(config.hermes.rest_base(), "http://127.0.0.1:8000");
+        assert!(!config.jsonl_events);
+    }
+
+    #[test]
+    fn hermes_config_bridge_report_enables_jsonl() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join("bmadder.toml");
+        std::fs::write(&config_path, "[hermes]\nbridge_report = true\nproject_slug = \"ai-r3\"\n").unwrap();
+        let config = Config::load(&config_path).unwrap();
+        assert!(config.hermes.bridge_report);
+        assert_eq!(config.hermes.project_slug, "ai-r3");
+        assert!(config.jsonl_events);
+        assert_eq!(config.hermes.board_slug(dir.path()), "ai-r3");
+    }
+
+    #[test]
+    fn hermes_config_board_slug_derives_from_folder() {
+        let dir = tempfile::tempdir_in(".").unwrap();
+        let config_path = dir.path().join("bmadder.toml");
+        std::fs::write(&config_path, "[hermes]\nbridge_report = true\n").unwrap();
+        let config = Config::load(&config_path).unwrap();
+        let slug = config.hermes.board_slug(dir.path());
+        assert!(!slug.is_empty());
+        assert!(!slug.contains('_'));
+    }
+
+    #[test]
+    fn hermes_config_rest_url_override() {
+        let cfg = HermesConfig {
+            rest_url: "https://hermes.example.com/".into(),
+            ..Default::default()
+        };
+        assert_eq!(cfg.rest_base(), "https://hermes.example.com");
+    }
+
+    #[test]
+    fn hermes_config_rest_url_empty_defaults_local() {
+        let cfg = HermesConfig::default();
+        assert_eq!(cfg.rest_base(), "http://127.0.0.1:8000");
+    }
+
+    #[test]
+    fn hermes_config_hermes_binary_falls_back_to_path() {
+        // A nonexistent hermes_home → falls back to "hermes" on PATH.
+        let cfg = HermesConfig {
+            hermes_home: "/nonexistent/hermes".into(),
+            ..Default::default()
+        };
+        assert_eq!(cfg.hermes_binary(), "hermes");
     }
 }

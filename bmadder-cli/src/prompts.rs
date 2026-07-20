@@ -149,6 +149,8 @@ Rules:
 - When build/test/lint pass AND all acceptance criteria are met:
   - Update story frontmatter: status: "PENDING_QA"
   - Fill in ## Implementation Notes: files changed, approach, decisions
+  - Add a ## File List section listing every file you changed (one per line, `- path/to/file`)
+  - If the Acceptance Criteria section has checkbox items (`- [ ]`), check them all (`- [x]`)
 - Append to _bmad/progress.txt: what you did, files modified, decisions, notes for QA
 - Commit: `git add -A && git commit -m "feat({story_id}): <summary>"`
 "#,
@@ -197,6 +199,11 @@ If ANY check fails:
 - Update story: qa_status: "FAIL", status: "REFIX"
 - Append under ## QA Notes: what failed, steps to reproduce, fix guidance
 - Do NOT commit
+
+Verdict (required):
+End your QA Notes with exactly one line in the form `VERDICT: PASS` or `VERDICT: FAIL`.
+When QA runs as a multi-model mixture, this verdict is read by a downstream
+formatter that applies the PASS/FAIL decision to the story frontmatter.
 
 Log to _bmad/logs/activity.log.
 "#,

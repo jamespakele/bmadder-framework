@@ -78,6 +78,31 @@ file_arg = "@"
 # plan_command = "~/apps/moa-rust"
 # plan_args = ["run", "--skill", "{skill}"]
 # plan_file_arg = "--file"
+
+# Optional: use moa-rust for QA phase (multi-model consensus review)
+# Uncomment and adjust path to enable. Requires a moa.toml at the project root
+# (or pass --config in qa_args). Reference models review in parallel; an
+# aggregator synthesizes a verdict; bmadder then runs a pi pass to apply the
+# PASS/FAIL decision to the story frontmatter.
+# qa_command = "~/apps/moa-rust"
+# qa_args = ["run", "--skill", "{skill}"]
+# qa_file_arg = "--file"
+
+# --- Hermes Kanban bridge integration ---
+# When bridge_report = true, BMADder auto-emits structured JSONL events to
+# _bmad/logs/events.jsonl AND spawns the Python bridge subprocess
+# (scripts/bmadder-kanban-bridge.py) so story state is mirrored to a Hermes
+# Kanban board with no separate process to run. Either reporting is on or off.
+# hermes_home is the filesystem path to the Hermes install (where hermes-agent/
+# lives); the bridge uses it to locate the `hermes` CLI binary. rest_url
+# overrides the REST API endpoint for status updates (default localhost:8000).
+[hermes]
+bridge_report = false
+project_slug = ""
+hermes_home = "~/.hermes"
+# rest_url = ""              # default: http://127.0.0.1:8000
+# bridge_script = ""         # default: <project>/scripts/bmadder-kanban-bridge.py
+# bridge_poll_seconds = 10
 "#
 }
 

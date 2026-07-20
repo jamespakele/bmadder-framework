@@ -162,6 +162,43 @@ command = "pi"
 args    = ["--model", "{model}", "--skill", "{skill}", "--print", "--mode", "json", "--no-session", "--approve"]
 ```
 
+### Mixture of Agents (moa-rust)
+
+Plan and QA phases can run a *mixture of agents* — multiple reference models
+deliberating in parallel, then an aggregator synthesizing a consensus — instead
+of a single model. This is powered by [moa-rust](https://github.com/jpakele/moa-rust),
+a separate binary that wraps `pi.dev` with MoA semantics.
+
+Per-phase command overrides in `[pi_dev]` select moa-rust for a phase. When the
+override is set, bmadder invokes `moa-rust run --skill <skill> --file <ctx> --system-prompt <prompt>`;
+moa-rust writes a consensus document to `output/moa-*.md`. Because moa-rust's
+backends run without file tools, bmadder then runs a `pi` pass that reads the
+consensus and applies the structured decision to the story file (the two-phase
+pattern).
+
+```toml
+[pi_dev]
+command = "pi"
+args    = ["--model", "{model}", "--skill", "{skill}", "--print", "--mode", "json", "--no-session", "--approve"]
+file_arg = "@"
+
+# Plan phase via moa-rust (SM + PO run as multi-model consensus)
+plan_command = "~/apps/moa-rust"
+plan_args    = ["run", "--skill", "{skill}"]
+plan_file_arg = "--file"
+
+# QA phase via moa-rust (multi-model consensus review)
+qa_command = "~/apps/moa-rust"
+qa_args    = ["run", "--skill", "{skill}"]
+qa_file_arg = "--file"
+```
+
+Requirements when a moa-rust override is enabled:
+
+- A `moa.toml` must exist at the project root (or pass `--config <path>` inside `*_args`) defining the aggregator and reference model panel.
+- `pi` must remain on PATH — it is used for the consensus-apply pass and for the dev phase.
+- Leave an override empty to fall back to the single-model `pi` path for that phase.
+
 ## Commands
 
 ```

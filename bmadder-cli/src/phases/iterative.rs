@@ -1,11 +1,12 @@
-use crate::agent::{invoke_agent, invoke_agent_plan};
+use crate::agent::{invoke_agent, invoke_agent_plan, invoke_agent_qa};
 use crate::git;
 use crate::logging;
+use crate::moa;
 use crate::prompts;
 use crate::story_io;
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::{Story, StoryStatus};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub fn run_iterative(
     config: &Config,
@@ -327,12 +328,12 @@ fn process_sm_po_loop(
         if after_po_first.frontmatter.status == StoryStatus::Draft
             || after_po_first.frontmatter.status == StoryStatus::Revise
         {
-            if let Some(consensus) = find_latest_moa_output(config) {
+            if let Some(consensus) = moa::find_latest_moa_output(config) {
                 logging::info(&format!(
                     "Found PO consensus: {}. Applying to story file...",
                     consensus.display()
                 ));
-                apply_po_consensus(config, &consensus, &story, &po_refs)?;
+                moa::apply_po_consensus(config, &consensus, &story, &po_refs)?;
             }
         }
 
@@ -403,6 +404,16 @@ fn process_dev_qa_loop(
 
             if status != StoryStatus::InDev {
                 story_io::update_story_status(&story.path, StoryStatus::InDev)?;
+                logging::log_event(
+                    config,
+                    &logging::StoryEvent::status_change(
+                        "DEV",
+                        &story.frontmatter.story_id,
+                        status.label(),
+                        "IN_DEV",
+                        &format!("dev iteration {}/{}", iter, max_dev_iters),
+                    ),
+                );
             }
 
             let dev_prompt = prompts::dev_story_prompt(&current);
@@ -440,6 +451,16 @@ fn process_dev_qa_loop(
         if after_dev_status != StoryStatus::PendingQA {
             // Force to PENDING_QA for QA review
             story_io::update_story_status(&story.path, StoryStatus::PendingQA)?;
+            logging::log_event(
+                config,
+                &logging::StoryEvent::status_change(
+                    "ORCH",
+                    &story.frontmatter.story_id,
+                    after_dev_status.label(),
+                    "PENDING_QA",
+                    "dev complete, queuing QA",
+                ),
+            );
         }
 
         logging::info(&format!(
@@ -456,7 +477,7 @@ fn process_dev_qa_loop(
             return Ok(true);
         }
 
-        invoke_agent(
+        invoke_agent_qa(
             config,
             "qa",
             &qa_model,
@@ -464,17 +485,54 @@ fn process_dev_qa_loop(
             &["--system-prompt", &qa_prompt],
         )?;
 
+        // Two-phase moa-rust pattern: when QA runs via moa-rust, the consensus
+        // is written to output/ and the story file is left untouched. Run a pi
+        // pass to apply the PASS/FAIL decision before reading the result.
+        let after_invoke = story_io::parse_story_file(&story.path)?;
+        if after_invoke.frontmatter.status == StoryStatus::PendingQA
+            && !config.pi_dev.qa_command.is_empty()
+        {
+            if let Some(consensus) = moa::find_latest_moa_output(config) {
+                logging::info(&format!(
+                    "Found QA consensus: {}. Applying to story file...",
+                    consensus.display()
+                ));
+                moa::apply_qa_consensus(config, &consensus, story, &qa_refs)?;
+            } else {
+                logging::warn("QA ran via moa-rust but no consensus output found; status unchanged.");
+            }
+        }
+
         // Check QA result
         let after_qa = story_io::parse_story_file(&story.path)?;
         match after_qa.frontmatter.status {
             StoryStatus::Completed => {
                 logging::ok(&format!("QA PASS: {}", story.frontmatter.story_id));
+                logging::log_event(
+                    config,
+                    &logging::StoryEvent::status_change(
+                        "QA",
+                        &story.frontmatter.story_id,
+                        "PENDING_QA",
+                        "COMPLETED",
+                        &format!("QA pass after {} dev iterations", iter),
+                    ),
+                );
                 if !no_commit && !config.dry_run {
                     git::git_story_commit(
                         &config.project_root,
                         &story.frontmatter.story_id,
                         &story.frontmatter.title,
                     )?;
+                    logging::log_event(
+                        config,
+                        &logging::StoryEvent::simple(
+                            "ORCH",
+                            &story.frontmatter.story_id,
+                            "COMMIT",
+                            "QA PASS commit + push",
+                        ),
+                    );
                 }
                 logging::log_activity(
                     config,
@@ -507,6 +565,16 @@ fn process_dev_qa_loop(
                 ));
                 story_io::update_story_status(&story.path, StoryStatus::Refix)?;
                 story_io::update_story_field(&story.path, "qa_status", "FAIL")?;
+                logging::log_event(
+                    config,
+                    &logging::StoryEvent::status_change(
+                        "QA",
+                        &story.frontmatter.story_id,
+                        other.label(),
+                        "REFIX",
+                        "ambiguous QA result forced REFIX",
+                    ),
+                );
             }
         }
     }
@@ -534,7 +602,14 @@ fn check_all_done(config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
         return Ok(false);
     }
     let content = std::fs::read_to_string(&progress_path)?;
-    Ok(content.contains("ALL_DONE"))
+    let done = content.contains("ALL_DONE");
+    if done {
+        logging::log_event(
+            config,
+            &logging::StoryEvent::simple("ORCH", "", "ALL_DONE", "pipeline complete"),
+        );
+    }
+    Ok(done)
 }
 
 /// Invoke SM with sm_single_prompt. Detect new story file by comparing
@@ -580,12 +655,12 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     let after_plan = story_io::list_stories(&config.paths.stories_dir)?;
     if after_plan.len() == before.len() {
         // No story file was created directly — check for moa consensus output
-        if let Some(consensus) = find_latest_moa_output(config) {
+        if let Some(consensus) = moa::find_latest_moa_output(config) {
             logging::info(&format!(
                 "Found moa consensus: {}. Formatting into story file...",
                 consensus.display()
             ));
-            format_consensus_as_story(config, &consensus, &file_refs)?;
+            moa::format_consensus_as_story(config, &consensus, &file_refs)?;
         }
     }
 
@@ -616,165 +691,4 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     }
 }
 
-/// Find the latest moa-rust consensus output in the project's output/ directory.
-fn find_latest_moa_output(config: &Config) -> Option<PathBuf> {
-    let output_dir = config.project_root.join("output");
-    if !output_dir.exists() {
-        return None;
-    }
-    let mut moa_files: Vec<PathBuf> = std::fs::read_dir(&output_dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map(|n| n.starts_with("moa-") && n.ends_with(".md"))
-                .unwrap_or(false)
-        })
-        .collect();
-    moa_files.sort_by(|a, b| {
-        b.metadata()
-            .and_then(|m| m.modified())
-            .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
-            .cmp(
-                &a.metadata()
-                    .and_then(|m| m.modified())
-                    .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
-            )
-    });
-    moa_files.first().cloned()
-}
 
-/// Run pi to convert a moa-rust consensus document into a properly formatted
-/// story file in docs/backlog/stories/.
-fn format_consensus_as_story(
-    config: &Config,
-    consensus_path: &Path,
-    context_files: &[&str],
-) -> Result<(), Box<dyn std::error::Error>> {
-    let consensus_rel = consensus_path
-        .strip_prefix(&config.project_root)
-        .unwrap_or(consensus_path)
-        .to_string_lossy()
-        .to_string();
-
-    let existing = story_io::list_stories(&config.paths.stories_dir)?;
-    let next_num = existing.len() + 1;
-
-    let format_prompt = format!(
-        r#"You are the Scrum Master formatting a consensus document into a proper story file.
-
-A multi-model consensus has been generated. Read it and write a SINGLE properly formatted story file.
-
-Consensus document: @{consensus}
-
-Rules:
-- Write the story file to: docs/backlog/stories/story-{nnnn:04}-<slug>.md
-- YAML frontmatter MUST include:
-    story_id: "STORY-{nnnn:04}"
-    title: "..."
-    status: "DRAFT"
-    po_alignment: "PENDING"
-    agent_hint: "specialist" (or "generalist" / "planning-qa" based on the work type)
-- Story sections MUST include: Context, Requirements, Acceptance Criteria, Implementation Notes, PO Alignment, QA Notes, Tasks
-- Extract the BEST consensus recommendation from the document — don't include the deliberation, just the final decisions
-- Acceptance Criteria must be numbered, specific, and testable (Given/When/Then where possible)
-- Log to _bmad/logs/activity.log
-"#,
-        consensus = consensus_rel,
-        nnnn = next_num,
-    );
-
-    let mut all_files: Vec<&str> = context_files.to_vec();
-    all_files.push(&consensus_rel);
-
-    logging::info("Running pi to format consensus into story file...");
-    let model = config.resolve_model(Phase::Plan, None);
-    let result = invoke_agent(
-        config,
-        "sm",
-        &model,
-        &all_files,
-        &["--system-prompt", &format_prompt],
-    )?;
-
-    if result.success {
-        logging::ok("Consensus formatted into story file.");
-    } else {
-        logging::warn(&format!(
-            "Formatting pass reported failure: {:?}",
-            result.error
-        ));
-    }
-
-    Ok(())
-}
-
-/// Run pi to apply a moa-rust PO review consensus to the story file.
-/// Reads the consensus decision (APPROVE → READY_FOR_DEV, or REVISE) and
-/// updates the story file accordingly.
-fn apply_po_consensus(
-    config: &Config,
-    consensus_path: &Path,
-    story: &Story,
-    context_files: &[&str],
-) -> Result<(), Box<dyn std::error::Error>> {
-    let consensus_rel = consensus_path
-        .strip_prefix(&config.project_root)
-        .unwrap_or(consensus_path)
-        .to_string_lossy()
-        .to_string();
-
-    let story_rel = story
-        .path
-        .strip_prefix(&config.project_root)
-        .unwrap_or(&story.path)
-        .to_string_lossy()
-        .to_string();
-
-    let format_prompt = format!(
-        r#"You are the Product Owner applying a consensus review decision to a story file.
-
-A multi-model consensus has been generated for this story. Read it and apply the decision.
-
-Consensus document: @{consensus}
-Story file: @{story}
-
-Rules:
-- Read the consensus decision: APPROVE or REVISE
-- If APPROVED: update story frontmatter to status: "READY_FOR_DEV", po_alignment: "APPROVED"
-  - Append under ## PO Alignment: "PO APPROVED: [brief rationale from consensus]"
-- If REVISE: update story frontmatter to status: "REVISE", po_alignment: "REVISE"
-  - Append under ## PO Alignment: "PO REVISE: [numbered list of issues from consensus]"
-- Do NOT implement any code. Do NOT touch other story files.
-- Log to _bmad/logs/activity.log.
-"#,
-        consensus = consensus_rel,
-        story = story_rel,
-    );
-
-    let mut all_files: Vec<&str> = context_files.to_vec();
-    all_files.push(&consensus_rel);
-
-    logging::info("Running pi to apply PO consensus to story file...");
-    let model = config.resolve_model(Phase::Plan, None);
-    let result = invoke_agent(
-        config,
-        "po",
-        &model,
-        &all_files,
-        &["--system-prompt", &format_prompt],
-    )?;
-
-    if result.success {
-        logging::ok("PO consensus applied to story file.");
-    } else {
-        logging::warn(&format!(
-            "PO consensus application reported failure: {:?}",
-            result.error
-        ));
-    }
-
-    Ok(())
-}
