@@ -102,6 +102,66 @@ Rules:
     )
 }
 
+/// Run `pi` to revise an EXISTING story file IN PLACE from a moa-rust SM
+/// consensus (iterative SM write/revise mode).
+///
+/// This is the revise-flow counterpart to `format_consensus_as_story`
+/// (which creates a new file). moa-rust only emits a consensus document —
+/// it has no file-edit tools, so without this apply pass the SM step would
+/// leave the story untouched and the SM↔PO loop would spin forever
+/// (PO keeps appending "PO REVISE" blocks to a story whose Requirements/AC
+/// never change). This pass hands the consensus to `pi` (which can edit
+/// files) and rewrites the story body to reflect the consensus and address
+/// every PO REVISE item, then resets the story to DRAFT/PENDING for re-review.
+pub fn apply_sm_consensus(
+    config: &Config,
+    consensus_path: &Path,
+    story: &Story,
+    context_files: &[&str],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let consensus_rel = rel_path(config, consensus_path);
+    let story_rel = rel_path(config, &story.path);
+
+    let format_prompt = format!(
+        r#"You are the Scrum Master revising an EXISTING story file in place from a multi-model consensus.
+
+A multi-model consensus has been generated for this story. Read it and rewrite the story file's content to reflect the consensus decisions.
+
+Consensus document: @{consensus}
+Story file to revise IN PLACE (overwrite this file): @{story}
+
+Rules:
+- REWRITE the existing story file's body sections — Context, Requirements, Acceptance Criteria, Implementation Notes, Tasks — to reflect the consensus and to address EVERY issue listed under ## PO Alignment (the PO REVISE items from the previous review). Do not just append a note; update the actual content.
+- Preserve the YAML frontmatter story_id and title exactly. Set status: "DRAFT" and po_alignment: "PENDING" so the PO re-reviews the revised story.
+- Keep the ## PO Alignment and ## QA Notes sections present (do not delete prior review history), but the content sections above them must change.
+- Acceptance Criteria must be numbered, specific, and testable (Given/When/Then where possible).
+- Do NOT create a new story file. Do NOT touch other story files. Do NOT implement code — this is story authoring, not development.
+- Log to _bmad/logs/activity.log.
+"#,
+        consensus = consensus_rel,
+        story = story_rel,
+    );
+    run_apply_pass(
+        config,
+        "sm",
+        Phase::Plan,
+        &consensus_rel,
+        context_files,
+        &format_prompt,
+        "revise story from SM consensus",
+    )?;
+    logging::log_event(
+        config,
+        &logging::StoryEvent::simple(
+            "SM",
+            &story.frontmatter.story_id,
+            "SM_CONSENSUS_APPLIED",
+            "SM consensus applied — story body revised in place",
+        ),
+    );
+    Ok(())
+}
+
 /// Run `pi` to convert a moa-rust consensus document into MULTIPLE story files
 /// (batch SM mode — one consensus containing the full PRD sharding).
 ///

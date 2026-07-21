@@ -311,6 +311,31 @@ fn process_sm_po_loop(
                 &sm_refs,
                 &["--system-prompt", &sm_prompt],
             )?;
+
+            // moa-rust only writes a consensus report to output/; it cannot
+            // edit the story file. When the plan engine is moa-rust, apply
+            // that consensus here to revise the story body in place —
+            // otherwise the SM step leaves the story untouched and the
+            // SM↔PO loop spins (PO keeps appending "PO REVISE" blocks to a
+            // story whose Requirements/AC never change).
+            if !config.pi_dev.plan_command.is_empty() {
+                if let Some(consensus) = moa::find_latest_moa_output(config) {
+                    logging::info(&format!(
+                        "Found SM consensus: {}. Revising story file in place...",
+                        consensus.display()
+                    ));
+                    moa::apply_sm_consensus(config, &consensus, &story, &sm_refs)?;
+
+                    // Guarantee the frontmatter reset so the PO re-reviews
+                    // the revised story. pi is told to set status DRAFT /
+                    // po_alignment PENDING, but it's an LLM editing YAML —
+                    // don't trust it for loop-correctness. Force it here.
+                    story_io::update_story_status(&story.path, StoryStatus::Draft)?;
+                    story_io::update_story_field(&story.path, "po_alignment", "PENDING")?;
+                } else {
+                    logging::warn("SM produced no consensus output; story body left unchanged.");
+                }
+            }
         }
 
         // Step B: PO review (unless skip_po)
