@@ -752,4 +752,50 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     }
 }
 
+#[cfg(test)]
+mod check_all_done_tests {
+    use super::*;
+    fn cfg_in(root: &std::path::Path) -> Config {
+        let toml_path = root.join("bmadder.toml");
+        std::fs::write(
+            &toml_path,
+            "[paths]\nstate_dir = \"_bmad\"\nstories_dir = \"stories\"\n",
+        )
+        .unwrap();
+        Config::load(&toml_path).unwrap()
+    }
 
+    #[test]
+    fn stale_all_done_ignored_when_stories_empty() {
+        // User wiped docs/backlog/stories/ to start fresh but left an old
+        // ALL_DONE in progress.txt. The pipeline must NOT terminate.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("_bmad")).unwrap();
+        std::fs::write(
+            root.join("_bmad").join("progress.txt"),
+            "ALL_DONE: PRD fully implemented.\n",
+        )
+        .unwrap();
+        // stories dir deliberately not created (empty/missing)
+        let config = cfg_in(root);
+        assert_eq!(check_all_done(&config).unwrap(), false);
+    }
+
+    #[test]
+    fn no_all_done_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("_bmad")).unwrap();
+        std::fs::write(root.join("_bmad").join("progress.txt"), "some other note\n").unwrap();
+        let config = cfg_in(root);
+        assert_eq!(check_all_done(&config).unwrap(), false);
+    }
+
+    #[test]
+    fn no_progress_file_returns_false() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = cfg_in(dir.path());
+        assert_eq!(check_all_done(&config).unwrap(), false);
+    }
+}

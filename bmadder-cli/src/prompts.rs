@@ -432,3 +432,114 @@ Log your decision to _bmad/logs/activity.log. Do NOT implement code.
 "#
     .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cfg_with_stories(stories_dir: &std::path::Path) -> Config {
+        let root = stories_dir.parent().unwrap().to_path_buf();
+        let toml_path = root.join("bmadder.toml");
+        std::fs::write(
+            &toml_path,
+            format!("[paths]\nstories_dir = \"{}\"\n", stories_dir.display()),
+        )
+        .unwrap();
+        Config::load(&toml_path).unwrap()
+    }
+
+    fn write_story(dir: &std::path::Path, fname: &str, sid: &str, title: &str, status: &str) {
+        std::fs::write(
+            dir.join(fname),
+            format!(
+                "---\nstory_id: \"{sid}\"\ntitle: \"{title}\"\nstatus: \"{status}\"\npo_alignment: \"PENDING\"\n---\n# {title}\n",
+                sid = sid,
+                title = title,
+                status = status
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn existing_stories_listing_empty_when_no_stories() {
+        let dir = tempfile::tempdir().unwrap();
+        let stories = dir.path().join("stories");
+        std::fs::create_dir_all(&stories).unwrap();
+        let config = cfg_with_stories(&stories);
+        let listing = existing_stories_listing(&config);
+        assert!(listing.contains("none"), "empty dir: {}", listing);
+        assert!(!listing.contains("story-"));
+    }
+
+    #[test]
+    fn existing_stories_listing_empty_when_dir_missing() {
+        // A missing stories dir behaves like an empty one (from-scratch reset).
+        let dir = tempfile::tempdir().unwrap();
+        let stories = dir.path().join("stories"); // not created
+        let config = cfg_with_stories(&stories);
+        let listing = existing_stories_listing(&config);
+        assert!(listing.contains("none"), "missing dir: {}", listing);
+    }
+
+    #[test]
+    fn existing_stories_listing_shows_existing_story_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let stories = dir.path().join("stories");
+        std::fs::create_dir_all(&stories).unwrap();
+        write_story(
+            &stories,
+            "story-0001-db-schema.md",
+            "0001",
+            "Database schema",
+            "READY_FOR_DEV",
+        );
+        let config = cfg_with_stories(&stories);
+        let listing = existing_stories_listing(&config);
+        assert!(listing.contains("story-0001-db-schema.md"), "{}", listing);
+        assert!(listing.contains("0001"), "{}", listing);
+        assert!(listing.contains("Database schema"), "{}", listing);
+        assert!(listing.contains("READY_FOR_DEV"), "{}", listing);
+    }
+
+    #[test]
+    fn existing_stories_listing_survives_unparseable_story() {
+        let dir = tempfile::tempdir().unwrap();
+        let stories = dir.path().join("stories");
+        std::fs::create_dir_all(&stories).unwrap();
+        std::fs::write(
+            stories.join("story-0099-broken.md"),
+            "not valid frontmatter",
+        )
+        .unwrap();
+        let config = cfg_with_stories(&stories);
+        let listing = existing_stories_listing(&config);
+        // Falls back to a row with placeholders rather than panicking.
+        assert!(listing.contains("story-0099-broken.md"), "{}", listing);
+        assert!(listing.contains("unparseable"), "{}", listing);
+    }
+
+    #[test]
+    fn sm_single_prompt_embeds_listing_and_next_number_guidance() {
+        let dir = tempfile::tempdir().unwrap();
+        let stories = dir.path().join("stories");
+        std::fs::create_dir_all(&stories).unwrap();
+        write_story(
+            &stories,
+            "story-0001-db-schema.md",
+            "0001",
+            "Database schema",
+            "READY_FOR_DEV",
+        );
+        let config = cfg_with_stories(&stories);
+        let prompt = sm_single_prompt(&config);
+        assert!(prompt.contains("## Existing Stories"), "{}", prompt);
+        assert!(prompt.contains("story-0001-db-schema.md"), "{}", prompt);
+        assert!(prompt.contains("next story number NNNN"), "{}", prompt);
+        assert!(
+            prompt.contains("Do NOT create a story that duplicates"),
+            "{}",
+            prompt
+        );
+    }
+}
