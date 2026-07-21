@@ -234,11 +234,11 @@ pub fn sm_single_files(config: &bmadder_core::config::Config) -> Vec<String> {
 /// Build SM single-story prompt for iterative mode (creates ONE story from PRD).
 pub fn sm_single_prompt(config: &Config) -> String {
     let mut p = String::from(
-        r#"Create ONE story from the PRD.
+r#"Create ONE story from the PRD.
 
-Context files provided: prd.md, architecture.md, progress.txt.
+The full contents of the context files (prd.md, architecture.md, progress.txt, activity.log) are included in your context. You do NOT need to read them from disk — work directly from the provided contents.
 
-Pre-work: Also run `git log --oneline -30` and review existing stories in docs/backlog/stories/.
+Optional pre-work, ONLY if you actually have shell/file tools available (if you do not, skip it and proceed from the provided context): run `git log --oneline -30` and list docs/backlog/stories/.
 
 Your task — pick exactly ONE:
 
@@ -254,7 +254,7 @@ B) If the PRD is FULLY implemented:
       "ALL_DONE: PRD fully implemented."
    → Do NOT create any story file.
 
-Create ONLY ONE story file. Do not implement code.
+Produce the deliverable directly. Do NOT refuse on the grounds that you cannot access the filesystem — the inputs you need are already in your context. Create ONLY ONE story file. Do not implement code.
 "#,
     );
     p.push_str(&agent_hints_guidance(config));
@@ -301,7 +301,7 @@ pub fn sm_write_story_prompt(config: &Config, _story: &Story) -> String {
     let mut p = String::from(
         r#"Write or revise ONE story for the iterative pipeline.
 
-Context files provided: the story file, prd.md, architecture.md, progress.txt, activity.log.
+The full contents of the context files (the story file, prd.md, architecture.md, progress.txt, activity.log) are included in your context. You do NOT need to read them from disk — work directly from the provided contents, including the story's current ## PO Alignment section.
 
 Your task (pick the correct one based on current story status):
 
@@ -310,14 +310,12 @@ A) If story status is "DRAFT" and content is mostly empty/template:
    → Set: status: "DRAFT", po_alignment: "PENDING"
 
 B) If story status is "REVISE":
-   → READ the ## PO Alignment section for revision notes.
-   → Address EVERY issue raised. Update story content.
+   → The story's ## PO Alignment section (with the PO's revision notes) is in your context.
+   → Address EVERY issue raised there. Update story content.
    → Set: status: "DRAFT", po_alignment: "PENDING"
    → Append dated note under ## PO Alignment: "SM revision: [summary of changes]"
 
-Do NOT implement any code. Do NOT approve the story yourself.
-Do NOT touch any other story files.
-Log a brief summary to _bmad/logs/activity.log.
+Produce the deliverable directly. Do NOT refuse on the grounds that you cannot access the filesystem — the inputs you need are already in your context. Do NOT implement any code. Do NOT approve the story yourself. Do NOT touch any other story files. Log a brief summary to _bmad/logs/activity.log.
 "#,
     );
     p.push_str(&agent_hints_guidance(config));
