@@ -642,20 +642,35 @@ fn process_dev_qa_loop(
 }
 
 /// Check if "ALL_DONE" appears in progress.txt content.
+///
+/// A stale ALL_DONE (left over after the user wiped docs/backlog/stories/
+/// to start fresh) must not terminate the pipeline — an empty stories folder
+/// means no PRD feature is actually implemented. So ALL_DONE is only honored
+/// when at least one story file exists. This makes "delete the stories
+/// folder" a complete from-scratch reset without scrubbing progress.txt.
 fn check_all_done(config: &Config) -> Result<bool, Box<dyn std::error::Error>> {
     let progress_path = config.progress_file_path();
     if !progress_path.exists() {
         return Ok(false);
     }
     let content = std::fs::read_to_string(&progress_path)?;
-    let done = content.contains("ALL_DONE");
-    if done {
-        logging::log_event(
-            config,
-            &logging::StoryEvent::simple("ORCH", "", "ALL_DONE", "pipeline complete"),
-        );
+    if !content.contains("ALL_DONE") {
+        return Ok(false);
     }
-    Ok(done)
+    // Honor ALL_DONE only when stories actually exist on disk.
+    let stories = story_io::list_stories(&config.paths.stories_dir)?;
+    if stories.is_empty() {
+        logging::warn(
+            "ALL_DONE present in progress.txt but docs/backlog/stories/ is empty — \
+             treating as stale, ignoring ALL_DONE (from-scratch reset).",
+        );
+        return Ok(false);
+    }
+    logging::log_event(
+        config,
+        &logging::StoryEvent::simple("ORCH", "", "ALL_DONE", "pipeline complete"),
+    );
+    Ok(true)
 }
 
 /// Invoke SM with sm_single_prompt. Detect new story file by comparing

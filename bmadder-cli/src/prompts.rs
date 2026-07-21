@@ -1,3 +1,4 @@
+use crate::story_io;
 use bmadder_core::config::Config;
 use bmadder_core::story::Story;
 
@@ -231,32 +232,86 @@ pub fn sm_single_files(config: &bmadder_core::config::Config) -> Vec<String> {
     files
 }
 
+/// Build a one-line-per-story snapshot of docs/backlog/stories/ for the SM.
+///
+/// The stories folder is the source of truth for "what exists" — this lets the
+/// SM pick the next NNNN, avoid duplicating existing stories, and decide
+/// A (create next) vs B (all done) from real state. It also means "delete the
+/// stories folder" is a complete from-scratch reset: an empty listing ⇒ no
+/// story covers any PRD feature ⇒ path A.
+fn existing_stories_listing(config: &Config) -> String {
+    let paths = match story_io::list_stories(&config.paths.stories_dir) {
+        Ok(p) => p,
+        Err(_) => return "(could not list docs/backlog/stories/)".to_string(),
+    };
+    if paths.is_empty() {
+        return "(none — no stories exist yet; this is a from-scratch run)".to_string();
+    }
+    let mut rows = Vec::with_capacity(paths.len());
+    for path in &paths {
+        let fname = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+            .to_string();
+        let (sid, title, status) = match story_io::parse_story_file(path) {
+            Ok(s) => (
+                s.frontmatter.story_id.clone(),
+                s.frontmatter.title.clone(),
+                s.frontmatter.status.label().to_string(),
+            ),
+            Err(_) => (
+                "?".to_string(),
+                "(unparseable)".to_string(),
+                "?".to_string(),
+            ),
+        };
+        rows.push(format!(
+            "- {fname} | {sid} | \"{title}\" | {status}",
+            fname = fname,
+            sid = sid,
+            title = title,
+            status = status
+        ));
+    }
+    rows.join("\n")
+}
+
 /// Build SM single-story prompt for iterative mode (creates ONE story from PRD).
 pub fn sm_single_prompt(config: &Config) -> String {
-    let mut p = String::from(
-r#"Create ONE story from the PRD.
+    let listing = existing_stories_listing(config);
+    let p = format!(
+        r#"Create ONE story from the PRD.
 
-The full contents of the context files (prd.md, architecture.md, progress.txt, activity.log) are included in your context. You do NOT need to read them from disk — work directly from the provided contents.
+The full contents of the context files (prd.md, architecture.md, progress.txt if present) are included in your context. You do NOT need to read them from disk — work directly from the provided contents.
 
-Optional pre-work, ONLY if you actually have shell/file tools available (if you do not, skip it and proceed from the provided context): run `git log --oneline -30` and list docs/backlog/stories/.
+## Existing Stories
+The current contents of docs/backlog/stories/ (authoritative — this is the source of truth for what already exists):
+{listing}
+
+Use that listing to decide what to do next:
+- The next story number NNNN = the highest existing story number + 1 (or 0001 if the listing is empty).
+- Do NOT create a story that duplicates an existing one (same feature / overlapping scope).
 
 Your task — pick exactly ONE:
 
-A) If the PRD has features NOT yet implemented (no story file and not in progress.txt):
+A) If the PRD has features NOT yet covered by an existing story (especially features with no READY_FOR_DEV or COMPLETED story for them):
    → Create ONE story file following the workflow and checklist.
    → Respect dependencies: foundational/infrastructure stories first.
-   → Filename: docs/backlog/stories/story-NNNN-<slug>.md (NNNN = next available 4-digit number)
+   → Filename: docs/backlog/stories/story-NNNN-<slug>.md (NNNN = next available 4-digit number from the listing above)
    → Frontmatter must include: story_id, title, status: "DRAFT", po_alignment: "PENDING"
    → Log to _bmad/logs/activity.log.
 
-B) If the PRD is FULLY implemented:
+B) If EVERY PRD feature already has a READY_FOR_DEV or COMPLETED story in the listing above:
    → Append this exact line to _bmad/progress.txt:
       "ALL_DONE: PRD fully implemented."
    → Do NOT create any story file.
 
-Produce the deliverable directly. Do NOT refuse on the grounds that you cannot access the filesystem — the inputs you need are already in your context. Create ONLY ONE story file. Do not implement code.
-"#,
+Produce the deliverable directly. Do NOT refuse on the grounds that you cannot access the filesystem — the inputs you need are already in your context, including the existing-stories listing above. Create ONLY ONE story file. Do not implement code.
+        "#,
+        listing = listing,
     );
+    let mut p = p;
     p.push_str(&agent_hints_guidance(config));
     p
 }
