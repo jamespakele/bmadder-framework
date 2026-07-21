@@ -8,6 +8,25 @@ use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::{Story, StoryStatus};
 use std::path::PathBuf;
 
+/// Return "moa-rust" when a plan-phase command override is configured, else "pi".
+/// Used in log messages so the user can see which engine is handling SM/PO.
+fn plan_engine_label(config: &Config) -> &str {
+    if config.pi_dev.plan_command.is_empty() {
+        "pi"
+    } else {
+        "moa-rust"
+    }
+}
+
+/// Return "moa-rust" when a QA-phase command override is configured, else "pi".
+fn qa_engine_label(config: &Config) -> &str {
+    if config.pi_dev.qa_command.is_empty() {
+        "pi"
+    } else {
+        "moa-rust"
+    }
+}
+
 pub fn run_iterative(
     config: &Config,
     from_existing: bool,
@@ -16,7 +35,11 @@ pub fn run_iterative(
     skip_po: bool,
     no_commit: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    logging::phase_banner("Phase: ITERATIVE (end-to-end pipeline)");
+    logging::phase_banner(&format!(
+        "Phase: ITERATIVE (end-to-end pipeline) [SM/PO: {}, QA: {}]",
+        plan_engine_label(config),
+        qa_engine_label(config)
+    ));
 
     // Validate prd + arch exist
     if !config.paths.prd_file.exists() {
@@ -273,7 +296,7 @@ fn process_sm_po_loop(
         logging::info(&format!("SM↔PO iteration {}/{}", iter, max_sm_iters));
 
         // Step A: SM write/revise
-        logging::info("SM: writing/revising story...");
+        logging::info(&format!("SM: writing/revising story [{}]...", plan_engine_label(config)));
         let sm_prompt = prompts::sm_write_story_prompt(config, &current);
         let sm_files: Vec<String> = prompts::sm_write_files(config, &current);
         let sm_refs: Vec<&str> = sm_files.iter().map(|s| s.as_str()).collect();
@@ -305,8 +328,7 @@ fn process_sm_po_loop(
             )?;
             break;
         }
-
-        logging::info("PO: reviewing...");
+        logging::info(&format!("PO: reviewing [{}]...", plan_engine_label(config)));
         let po_prompt = prompts::po_single_prompt(&updated);
         let po_files: Vec<String> = prompts::po_single_files(config, &updated);
         let po_refs: Vec<&str> = po_files.iter().map(|s| s.as_str()).collect();
@@ -464,16 +486,15 @@ fn process_dev_qa_loop(
         }
 
         logging::info(&format!(
-            "QA review for {} [{}]",
-            story.frontmatter.story_id, qa_model
+            "QA review for {} [{}] via {}",
+            story.frontmatter.story_id, qa_model, qa_engine_label(config)
         ));
-
         let qa_prompt = prompts::qa_story_prompt(&after_dev);
         let qa_files: Vec<String> = prompts::qa_story_files(config, &after_dev);
         let qa_refs: Vec<&str> = qa_files.iter().map(|s| s.as_str()).collect();
 
         if config.dry_run {
-            logging::info("[DRY RUN] Would invoke QA agent");
+            logging::info(&format!("[DRY RUN] Would invoke QA agent via {}", qa_engine_label(config)));
             return Ok(true);
         }
 
@@ -623,7 +644,7 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     // List stories before invoking SM
     let before = story_io::list_stories(&config.paths.stories_dir)?;
 
-    logging::info(&format!("SM: creating next story [{}]...", model));
+    logging::info(&format!("SM: creating next story [{}] via {}...", model, plan_engine_label(config)));
     logging::log_activity(
         config,
         "ORCH",

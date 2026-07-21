@@ -7,6 +7,15 @@ use crate::story_io;
 use bmadder_core::config::Config;
 use bmadder_core::story::StoryStatus;
 
+/// Return "moa-rust" when a plan-phase command override is configured, else "pi".
+fn plan_engine_label(config: &Config) -> &str {
+    if config.pi_dev.plan_command.is_empty() {
+        "pi"
+    } else {
+        "moa-rust"
+    }
+}
+
 pub fn run_plan(
     config: &Config,
     skip_sm: bool,
@@ -43,14 +52,14 @@ pub fn run_plan(
         logging::info(&format!("{} existing DRAFT stories.", drafts));
     } else {
         let model = config.resolve_model(bmadder_core::config::Phase::Plan, None);
-        logging::info(&format!("Step 1/2: Scrum Master [{}]", model));
+        logging::info(&format!("Step 1/2: Scrum Master [{}] via {}", model, plan_engine_label(config)));
         logging::log_marker(config, "START", "PRD_SHARD")?;
         logging::log_activity(
             config,
             "ORCH",
             "-",
             "SM_START",
-            &format!("SM sharding via {}", model),
+            &format!("SM sharding via {} ({})", model, plan_engine_label(config)),
         )?;
 
         let prompt = prompts::sm_batch_prompt(config);
@@ -141,7 +150,7 @@ pub fn run_plan(
             "ORCH",
             "-",
             "PO_START",
-            &format!("PO review via {}", model),
+            &format!("PO review via {} ({})", model, plan_engine_label(config)),
         )?;
 
         let prompt = prompts::po_batch_prompt();
@@ -202,7 +211,7 @@ pub fn run_plan(
         }
         logging::log_marker(config, "END", "PO_REVIEW")?;
         logging::log_activity(config, "PO", "-", "PO_DONE", "Review complete")?;
-        logging::ok("PO review complete.");
+        logging::ok(&format!("PO review complete [{}].", plan_engine_label(config)));
     }
 
     let ready = story_io::count_by_status(&config.paths.stories_dir, StoryStatus::ReadyForDev);
