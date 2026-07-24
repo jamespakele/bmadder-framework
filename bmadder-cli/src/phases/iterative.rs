@@ -1,4 +1,4 @@
-use crate::agent::{invoke_agent, invoke_agent_plan, invoke_agent_qa};
+use crate::agent::{invoke_agent, is_agent_timeout};
 use crate::git;
 use crate::logging;
 use crate::moa;
@@ -7,25 +7,6 @@ use crate::story_io;
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::{Story, StoryStatus};
 use std::path::PathBuf;
-
-/// Return "moa-rust" when a plan-phase command override is configured, else "pi".
-/// Used in log messages so the user can see which engine is handling SM/PO.
-fn plan_engine_label(config: &Config) -> &str {
-    if config.pi_dev.plan_command.is_empty() {
-        "pi"
-    } else {
-        "moa-rust"
-    }
-}
-
-/// Return "moa-rust" when a QA-phase command override is configured, else "pi".
-fn qa_engine_label(config: &Config) -> &str {
-    if config.pi_dev.qa_command.is_empty() {
-        "pi"
-    } else {
-        "moa-rust"
-    }
-}
 
 /// Max consecutive stalled stories before the whole pipeline aborts. A broken
 /// QA/apply pipeline is broken for every story; without this cap, Step 2 would
@@ -69,8 +50,8 @@ pub fn run_iterative(
 ) -> Result<(), Box<dyn std::error::Error>> {
     logging::phase_banner(&format!(
         "Phase: ITERATIVE (end-to-end pipeline) [SM/PO: {}, QA: {}]",
-        plan_engine_label(config),
-        qa_engine_label(config)
+        config.role_engine_label("sm"),
+        config.role_engine_label("qa")
     ));
 
     // Validate prd + arch exist
@@ -355,7 +336,7 @@ fn process_sm_po_loop(
         // Step A: SM write/revise
         logging::info(&format!(
             "SM: writing/revising story [{}]...",
-            plan_engine_label(config)
+            config.role_engine_label("sm")
         ));
         let sm_prompt = prompts::sm_write_story_prompt(config, &current);
         let sm_files: Vec<String> = prompts::sm_write_files(config, &current);
@@ -365,13 +346,28 @@ fn process_sm_po_loop(
             logging::info("[DRY RUN] Would invoke SM");
         } else {
             let invoked_at = std::time::SystemTime::now();
-            invoke_agent_plan(
+            if let Err(e) = invoke_agent(
                 config,
                 "sm",
                 &model,
                 &sm_refs,
                 &["--system-prompt", &sm_prompt],
-            )?;
+            ) {
+                if is_agent_timeout(e.as_ref()) {
+                    logging::err(&format!(
+                        "SM timeout for {}: {}",
+                        story.frontmatter.story_id, e
+                    ));
+                    logging::log_activity(
+                        config,
+                        "ORCH",
+                        &story.frontmatter.story_id,
+                        "SM_TIMEOUT",
+                        &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+                    )?;
+                }
+                return Err(e);
+            }
 
             // moa-rust only writes a consensus report to output/; it cannot
             // edit the story file. When the plan engine is moa-rust, apply
@@ -379,7 +375,7 @@ fn process_sm_po_loop(
             // otherwise the SM step leaves the story untouched and the
             // SM↔PO loop spins (PO keeps appending "PO REVISE" blocks to a
             // story whose Requirements/AC never change).
-            if !config.pi_dev.plan_command.is_empty() {
+            if config.role_has_command_override("sm") {
                 if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                     logging::info(&format!(
                         "Found SM consensus: {}. Revising story file in place...",
@@ -420,7 +416,10 @@ fn process_sm_po_loop(
             )?;
             break;
         }
-        logging::info(&format!("PO: reviewing [{}]...", plan_engine_label(config)));
+        logging::info(&format!(
+            "PO: reviewing [{}]...",
+            config.role_engine_label("po")
+        ));
         let po_prompt = prompts::po_single_prompt(&updated);
         let po_files: Vec<String> = prompts::po_single_files(config, &updated);
         let po_refs: Vec<&str> = po_files.iter().map(|s| s.as_str()).collect();
@@ -429,13 +428,28 @@ fn process_sm_po_loop(
             break;
         }
         let invoked_at = std::time::SystemTime::now();
-        invoke_agent_plan(
+        if let Err(e) = invoke_agent(
             config,
             "po",
             &model,
             &po_refs,
             &["--system-prompt", &po_prompt],
-        )?;
+        ) {
+            if is_agent_timeout(e.as_ref()) {
+                logging::err(&format!(
+                    "PO timeout for {}: {}",
+                    story.frontmatter.story_id, e
+                ));
+                logging::log_activity(
+                    config,
+                    "ORCH",
+                    &story.frontmatter.story_id,
+                    "PO_TIMEOUT",
+                    &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+                )?;
+            }
+            return Err(e);
+        }
 
         // If using moa-rust for plan, check if PO consensus was produced
         // and run pi to apply the decision to the story file
@@ -548,13 +562,30 @@ fn process_dev_qa_loop(
             if config.dry_run {
                 logging::info("[DRY RUN] Would invoke dev agent");
             } else {
-                invoke_agent(
+                if let Err(e) = invoke_agent(
                     config,
                     "dev",
                     &dev_model,
                     &dev_refs,
                     &["--system-prompt", &dev_prompt],
-                )?;
+                ) {
+                    if is_agent_timeout(e.as_ref()) {
+                        logging::err(&format!(
+                            "DEV timeout for {}: {}",
+                            story.frontmatter.story_id, e
+                        ));
+                        logging::log_activity(
+                            config,
+                            "ORCH",
+                            &story.frontmatter.story_id,
+                            "DEV_TIMEOUT",
+                            &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+                        )?;
+                        story_io::update_story_status(&story.path, StoryStatus::Refix)?;
+                        return Ok(false);
+                    }
+                    return Err(e);
+                }
             }
         }
 
@@ -592,7 +623,7 @@ fn process_dev_qa_loop(
             "QA review for {} [{}] via {}",
             story.frontmatter.story_id,
             qa_model,
-            qa_engine_label(config)
+            config.role_engine_label("qa")
         ));
         let qa_prompt = prompts::qa_story_prompt(&after_dev);
         let qa_files: Vec<String> = prompts::qa_story_files(config, &after_dev);
@@ -601,26 +632,44 @@ fn process_dev_qa_loop(
         if config.dry_run {
             logging::info(&format!(
                 "[DRY RUN] Would invoke QA agent via {}",
-                qa_engine_label(config)
+                config.role_engine_label("qa")
             ));
             return Ok(true);
         }
 
         let invoked_at = std::time::SystemTime::now();
-        invoke_agent_qa(
+        if let Err(e) = invoke_agent(
             config,
             "qa",
             &qa_model,
             &qa_refs,
             &["--system-prompt", &qa_prompt],
-        )?;
+        ) {
+            if is_agent_timeout(e.as_ref()) {
+                logging::err(&format!(
+                    "QA timeout for {}: {}",
+                    story.frontmatter.story_id, e
+                ));
+                logging::log_activity(
+                    config,
+                    "ORCH",
+                    &story.frontmatter.story_id,
+                    "QA_TIMEOUT",
+                    &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+                )?;
+                story_io::update_story_status(&story.path, StoryStatus::Refix)?;
+                story_io::update_story_field(&story.path, "qa_status", "FAIL")?;
+                return Ok(false);
+            }
+            return Err(e);
+        }
 
         // Two-phase moa-rust pattern: when QA runs via moa-rust, the consensus
         // is written to output/ and the story file is left untouched. Run a pi
         // pass to apply the PASS/FAIL decision before reading the result.
         let after_invoke = story_io::parse_story_file(&story.path)?;
         if after_invoke.frontmatter.status == StoryStatus::PendingQA
-            && !config.pi_dev.qa_command.is_empty()
+            && config.role_has_command_override("qa")
         {
             if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                 logging::info(&format!(
@@ -800,7 +849,7 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     logging::info(&format!(
         "SM: creating next story [{}] via {}...",
         model,
-        plan_engine_label(config)
+        config.role_engine_label("sm")
     ));
     logging::log_activity(
         config,
@@ -820,13 +869,25 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     }
 
     let invoked_at = std::time::SystemTime::now();
-    invoke_agent_plan(
+    if let Err(e) = invoke_agent(
         config,
         "sm",
         &model,
         &file_refs,
         &["--system-prompt", &prompt],
-    )?;
+    ) {
+        if is_agent_timeout(e.as_ref()) {
+            logging::err(&format!("SM timeout while creating next story: {}", e));
+            logging::log_activity(
+                config,
+                "ORCH",
+                "-",
+                "SM_NEXT_TIMEOUT",
+                &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+            )?;
+        }
+        return Err(e);
+    }
 
     // If using moa-rust for plan, the consensus output goes to output/
     // not docs/backlog/stories/. Run a formatting pass with pi to create

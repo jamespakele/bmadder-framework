@@ -1,4 +1,4 @@
-use crate::agent::invoke_agent_qa;
+use crate::agent::{invoke_agent, is_agent_timeout};
 use crate::git;
 use crate::logging;
 use crate::moa;
@@ -45,7 +45,11 @@ pub fn run_qa(
         logging::story_banner(&format!("{}: {}", story_id, title));
 
         let model = config.resolve_model(Phase::QA, None);
-        logging::info(&format!("QA agent model: {}", model));
+        logging::info(&format!(
+            "QA agent model: {} via {}",
+            model,
+            config.role_engine_label("qa")
+        ));
 
         logging::log_marker(config, "START", &format!("QA:{}", story_id))?;
         logging::log_activity(
@@ -53,7 +57,11 @@ pub fn run_qa(
             "ORCH",
             story_id,
             "QA_START",
-            &format!("QA review via {}", model),
+            &format!(
+                "QA review via {} ({})",
+                model,
+                config.role_engine_label("qa")
+            ),
         )?;
 
         // Build QA invocation
@@ -69,13 +77,29 @@ pub fn run_qa(
         }
 
         let invoked_at = std::time::SystemTime::now();
-        invoke_agent_qa(
+        if let Err(e) = invoke_agent(
             config,
             "qa",
             &model,
             &file_refs,
             &["--system-prompt", &prompt],
-        )?;
+        ) {
+            if is_agent_timeout(e.as_ref()) {
+                logging::err(&format!("QA timeout for {}: {}", story_id, e));
+                logging::log_activity(
+                    config,
+                    "ORCH",
+                    story_id,
+                    "QA_TIMEOUT",
+                    &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+                )?;
+                story_io::update_story_status(&story.path, StoryStatus::Refix)?;
+                story_io::update_story_field(&story.path, "qa_status", "FAIL")?;
+                failed += 1;
+                continue;
+            }
+            return Err(e);
+        }
 
         // Two-phase moa-rust pattern: moa-rust writes a consensus document
         // to output/ but does not modify the story file. When QA runs via
@@ -83,7 +107,7 @@ pub fn run_qa(
         // the consensus and apply the PASS/FAIL decision to the story.
         let after_invoke = story_io::parse_story_file(&story.path)?;
         if after_invoke.frontmatter.status == StoryStatus::PendingQA
-            && !config.pi_dev.qa_command.is_empty()
+            && config.role_has_command_override("qa")
         {
             if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                 logging::info(&format!(

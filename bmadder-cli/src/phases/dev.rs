@@ -1,4 +1,4 @@
-use crate::agent::{invoke_agent, is_gemini_rate_limited, GeminiBackoff};
+use crate::agent::{invoke_agent, is_agent_timeout, is_gemini_rate_limited, GeminiBackoff};
 use crate::git;
 use crate::logging;
 use crate::prompts;
@@ -102,13 +102,30 @@ pub fn run_dev(
                 break;
             }
 
-            let result = invoke_agent(
+            let result = match invoke_agent(
                 config,
                 "dev",
                 &model,
                 &file_refs,
                 &["--system-prompt", &prompt],
-            )?;
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    if is_agent_timeout(e.as_ref()) {
+                        logging::err(&format!("DEV timeout for {}: {}", story_id, e));
+                        logging::log_activity(
+                            config,
+                            "ORCH",
+                            story_id,
+                            "DEV_TIMEOUT",
+                            &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+                        )?;
+                        story_io::update_story_status(&story.path, StoryStatus::Refix)?;
+                        break;
+                    }
+                    return Err(e);
+                }
+            };
 
             // Read status from disk after agent returns
             let updated = story_io::parse_story_file(&story.path)?;

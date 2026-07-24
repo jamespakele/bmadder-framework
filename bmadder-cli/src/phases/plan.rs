@@ -1,4 +1,4 @@
-use crate::agent::invoke_agent_plan;
+use crate::agent::{invoke_agent, is_agent_timeout};
 use crate::logging;
 use crate::moa;
 use crate::prompts;
@@ -6,15 +6,6 @@ use crate::spec;
 use crate::story_io;
 use bmadder_core::config::Config;
 use bmadder_core::story::StoryStatus;
-
-/// Return "moa-rust" when a plan-phase command override is configured, else "pi".
-fn plan_engine_label(config: &Config) -> &str {
-    if config.pi_dev.plan_command.is_empty() {
-        "pi"
-    } else {
-        "moa-rust"
-    }
-}
 
 pub fn run_plan(
     config: &Config,
@@ -55,7 +46,7 @@ pub fn run_plan(
         logging::info(&format!(
             "Step 1/2: Scrum Master [{}] via {}",
             model,
-            plan_engine_label(config)
+            config.role_engine_label("sm")
         ));
         logging::log_marker(config, "START", "PRD_SHARD")?;
         logging::log_activity(
@@ -63,7 +54,11 @@ pub fn run_plan(
             "ORCH",
             "-",
             "SM_START",
-            &format!("SM sharding via {} ({})", model, plan_engine_label(config)),
+            &format!(
+                "SM sharding via {} ({})",
+                model,
+                config.role_engine_label("sm")
+            ),
         )?;
 
         let prompt = prompts::sm_batch_prompt(config);
@@ -83,13 +78,28 @@ pub fn run_plan(
                 "[DRY RUN] Would invoke SM with pi --skill bmad-create-epics-and-stories",
             );
         } else {
-            let result = invoke_agent_plan(
+            let result = match invoke_agent(
                 config,
                 "sm",
                 &model,
                 &file_refs,
                 &["--system-prompt", &prompt],
-            )?;
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    if is_agent_timeout(e.as_ref()) {
+                        logging::err(&format!("SM timeout: {}", e));
+                        logging::log_activity(
+                            config,
+                            "ORCH",
+                            "-",
+                            "SM_TIMEOUT",
+                            &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+                        )?;
+                    }
+                    return Err(e);
+                }
+            };
             logging::info(&format!(
                 "SM result: success={} summary={:?}",
                 result.success, result.output_summary
@@ -101,7 +111,7 @@ pub fn run_plan(
         // moa-rust and no NEW story file appeared (compared against the pre-invoke
         // snapshot — robust to pre-existing DRAFT/REVISE stories from prior runs),
         // run a pi pass to format the consensus into individual story files.
-        if !config.dry_run && !config.pi_dev.plan_command.is_empty() {
+        if !config.dry_run && config.role_has_command_override("sm") {
             let after_sm = story_io::list_stories(&config.paths.stories_dir)?;
             if story_io::detect_new_story_file(&before_sm, &after_sm).is_none() {
                 if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
@@ -159,7 +169,11 @@ pub fn run_plan(
             "ORCH",
             "-",
             "PO_START",
-            &format!("PO review via {} ({})", model, plan_engine_label(config)),
+            &format!(
+                "PO review via {} ({})",
+                model,
+                config.role_engine_label("po")
+            ),
         )?;
 
         let prompt = prompts::po_batch_prompt();
@@ -187,13 +201,28 @@ pub fn run_plan(
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke PO with pi --skill");
         } else {
-            let result = invoke_agent_plan(
+            let result = match invoke_agent(
                 config,
                 "po",
                 &model,
                 &file_refs,
                 &["--system-prompt", &prompt],
-            )?;
+            ) {
+                Ok(r) => r,
+                Err(e) => {
+                    if is_agent_timeout(e.as_ref()) {
+                        logging::err(&format!("PO timeout: {}", e));
+                        logging::log_activity(
+                            config,
+                            "ORCH",
+                            "-",
+                            "PO_TIMEOUT",
+                            &format!("timed out after {}s", config.defaults.story_timeout_seconds),
+                        )?;
+                    }
+                    return Err(e);
+                }
+            };
             logging::info(&format!(
                 "PO result: success={} summary={:?}",
                 result.success, result.output_summary
@@ -205,7 +234,7 @@ pub fn run_plan(
         // before the invoke — robust to pre-existing READY_FOR_DEV stories),
         // run a pi pass to apply the APPROVE/REVISE decisions. The apply prompt
         // limits edits to DRAFT stories, so re-running on a mixed directory is safe.
-        if !config.dry_run && !config.pi_dev.plan_command.is_empty() && !drafts_before_po.is_empty()
+        if !config.dry_run && config.role_has_command_override("po") && !drafts_before_po.is_empty()
         {
             if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                 logging::info(&format!(
@@ -226,7 +255,7 @@ pub fn run_plan(
         logging::log_activity(config, "PO", "-", "PO_DONE", "Review complete")?;
         logging::ok(&format!(
             "PO review complete [{}].",
-            plan_engine_label(config)
+            config.role_engine_label("po")
         ));
     }
 

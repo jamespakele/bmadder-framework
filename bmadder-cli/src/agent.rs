@@ -3,8 +3,12 @@ use bmadder_core::agent::PiDevOutput;
 use bmadder_core::config::Config;
 use regex::Regex;
 use std::process::{Command, Stdio};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex};
 use std::time::Duration;
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 /// Expand ~ to the user's home directory in a path string.
 fn expand_tilde(path: &str) -> String {
@@ -22,7 +26,7 @@ fn expand_tilde(path: &str) -> String {
 
 /// Build a command that loads a skill and processes given input files non-interactively.
 /// Supports both pi (@file syntax) and moa-rust (--file syntax) via config.file_arg.
-/// `mode` selects phase-specific command/args/file_arg overrides (Plan, QA) when configured.
+/// `mode` selects per-role command/args/file_arg overrides when configured.
 pub fn build_pi_command(
     config: &Config,
     role_key: &str,
@@ -43,26 +47,27 @@ pub fn build_pi_command(
         )
     })?;
 
-    // Select command/args/file_arg — phase-specific override or default
-    let (raw_command, args, file_arg) = match mode {
-        CommandMode::Plan if !config.pi_dev.plan_command.is_empty() => (
-            &config.pi_dev.plan_command,
-            &config.pi_dev.plan_args,
-            if config.pi_dev.plan_file_arg.is_empty() {
-                &config.pi_dev.file_arg
-            } else {
-                &config.pi_dev.plan_file_arg
-            },
-        ),
-        CommandMode::Qa if !config.pi_dev.qa_command.is_empty() => (
-            &config.pi_dev.qa_command,
-            &config.pi_dev.qa_args,
-            if config.pi_dev.qa_file_arg.is_empty() {
-                &config.pi_dev.file_arg
-            } else {
-                &config.pi_dev.qa_file_arg
-            },
-        ),
+    // Select command/args/file_arg — per-role override (e.g. moa-rust) or
+    // pi_dev defaults. CommandMode::Default forces pi_dev regardless of any
+    // role override (used by moa apply passes that must run pi).
+    let role = config.roles.get(role_key);
+    let (raw_command, args, file_arg): (&str, &Vec<String>, &str) = match mode {
+        CommandMode::Role if role.map_or(false, |r| !r.command.is_empty()) => {
+            let r = role.unwrap();
+            (
+                &r.command,
+                if r.args.is_empty() {
+                    &config.pi_dev.args
+                } else {
+                    &r.args
+                },
+                if r.file_arg.is_empty() {
+                    &config.pi_dev.file_arg
+                } else {
+                    &r.file_arg
+                },
+            )
+        }
         _ => (
             &config.pi_dev.command,
             &config.pi_dev.args,
@@ -97,13 +102,43 @@ pub fn build_pi_command(
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
+
+    // Put pi in its own process group so a timeout kill can reach any
+    // children (network clients, subagents) it spawned.
+    #[cfg(unix)]
+    cmd.process_group(0);
+
     Ok(cmd)
 }
 
-/// Invoke pi with a skill for automatic, non-interactive processing.
+/// Invoke a role's agent for automatic, non-interactive processing.
 /// The skill is loaded via --skill; context files are passed as @ paths.
 /// Returns the parsed PiDevOutput (JSON mode) or a constructed AgentResult on fallback.
+///
+/// Honors a per-role `command` override (e.g. moa-rust) when configured;
+/// otherwise uses the `[pi_dev]` defaults. This is the consensus pass.
 pub fn invoke_agent(
+    config: &Config,
+    role_key: &str,
+    model: &str,
+    files: &[&str],
+    extra_args: &[&str],
+) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
+    invoke_agent_with(
+        config,
+        role_key,
+        model,
+        files,
+        extra_args,
+        CommandMode::Role,
+    )
+}
+
+/// Like `invoke_agent` but always uses the `[pi_dev]` defaults, ignoring any
+/// per-role command override. Used by moa apply passes that must run `pi`
+/// even when the role's consensus command is moa-rust (moa-rust backends have
+/// no file-edit tools, so the structured decision is applied by pi).
+pub fn invoke_agent_default(
     config: &Config,
     role_key: &str,
     model: &str,
@@ -120,45 +155,39 @@ pub fn invoke_agent(
     )
 }
 
-/// Like invoke_agent but uses plan-specific command/args if configured.
-pub fn invoke_agent_plan(
-    config: &Config,
-    role_key: &str,
-    model: &str,
-    files: &[&str],
-    extra_args: &[&str],
-) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
-    invoke_agent_with(
-        config,
-        role_key,
-        model,
-        files,
-        extra_args,
-        CommandMode::Plan,
-    )
+/// Error returned when an agent subprocess is killed because it exceeded
+/// the configured `story_timeout_seconds`.
+#[derive(Debug)]
+pub struct AgentTimeoutError {
+    pub role_key: String,
+    pub timeout_secs: u64,
+    pub pid: i32,
 }
 
-/// Like invoke_agent but uses QA-specific command/args if configured
-/// (e.g. moa-rust for multi-model QA review).
-pub fn invoke_agent_qa(
-    config: &Config,
-    role_key: &str,
-    model: &str,
-    files: &[&str],
-    extra_args: &[&str],
-) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
-    invoke_agent_with(config, role_key, model, files, extra_args, CommandMode::Qa)
+impl std::fmt::Display for AgentTimeoutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "pi {} timed out after {}s (killed process group {})",
+            self.role_key, self.timeout_secs, self.pid
+        )
+    }
 }
 
-/// Which pipeline phase's command template to use for an invocation.
+impl std::error::Error for AgentTimeoutError {}
+
+/// Returns true if the error is an `AgentTimeoutError`.
+pub fn is_agent_timeout(err: &(dyn std::error::Error + 'static)) -> bool {
+    err.downcast_ref::<AgentTimeoutError>().is_some()
+}
+
+/// Which command template to use for an invocation.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum CommandMode {
-    /// Default `[pi_dev]` command/args.
+    /// Honor a per-role `command` override when present; else `[pi_dev]` defaults.
+    Role,
+    /// Always use `[pi_dev]` defaults (moa apply passes).
     Default,
-    /// Plan-phase override (`plan_command` / `plan_args` / `plan_file_arg`).
-    Plan,
-    /// QA-phase override (`qa_command` / `qa_args` / `qa_file_arg`).
-    Qa,
 }
 
 fn invoke_agent_with(
@@ -171,7 +200,42 @@ fn invoke_agent_with(
 ) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
     let mut cmd = build_pi_command(config, role_key, model, files, extra_args, mode)?;
 
-    let output = cmd.spawn()?.wait_with_output()?;
+    let timeout_secs = config.defaults.story_timeout_seconds;
+    let child = cmd.spawn()?;
+    let child_pid = child.id() as i32;
+
+    // Watchdog: kill the entire process group if the child runs past timeout.
+    let killed = Arc::new(AtomicBool::new(false));
+    #[cfg(unix)]
+    let _cancel_tx = if timeout_secs > 0 {
+        let killed_clone = killed.clone();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(
+            move || match rx.recv_timeout(Duration::from_secs(timeout_secs)) {
+                Ok(()) | Err(mpsc::RecvTimeoutError::Disconnected) => {}
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    unsafe { libc::kill(-child_pid, libc::SIGKILL) };
+                    killed_clone.store(true, Ordering::SeqCst);
+                }
+            },
+        );
+        Some(tx)
+    } else {
+        None
+    };
+
+    let output = child.wait_with_output()?;
+
+    #[cfg(unix)]
+    drop(_cancel_tx);
+
+    if timeout_secs > 0 && killed.load(Ordering::SeqCst) {
+        return Err(Box::new(AgentTimeoutError {
+            role_key: role_key.to_string(),
+            timeout_secs,
+            pid: child_pid,
+        }));
+    }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -294,6 +358,101 @@ mod tests {
 
         bo.reset();
         assert_eq!(bo.current(), Duration::from_secs(30));
+    }
+
+    #[cfg(unix)]
+    fn make_timeout_test_config(
+        dir: &std::path::Path,
+        timeout_secs: u64,
+        delay_secs: u64,
+    ) -> Config {
+        let skills_dir = dir.join(".agent/skills/bmad-dev-story");
+        std::fs::create_dir_all(&skills_dir).unwrap();
+
+        let toml = format!(
+            r#"
+[paths]
+skills_dir = ".agent/skills"
+stories_dir = "docs/backlog/stories"
+state_dir = "_bmad"
+
+[defaults]
+story_timeout_seconds = {}
+
+[pi_dev]
+command = "sleep"
+args = ["{}"]
+file_arg = "@"
+
+[models]
+gpt5 = "gpt-5"
+
+[roles.dev]
+personality = "bmad-agent-dev"
+model = "gpt5"
+skill = "bmad-dev-story"
+"#,
+            timeout_secs, delay_secs
+        );
+        let config_path = dir.join("bmadder.toml");
+        std::fs::write(&config_path, toml).unwrap();
+        Config::load(&config_path).unwrap()
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_agent_timeout_kills_slow_child() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = make_timeout_test_config(tmp.path(), 1, 10);
+
+        let start = std::time::Instant::now();
+        let err = invoke_agent(&config, "dev", "gpt5", &[], &[])
+            .expect_err("slow child should have timed out");
+
+        assert!(
+            is_agent_timeout(err.as_ref()),
+            "expected AgentTimeoutError, got: {}",
+            err
+        );
+        assert!(
+            start.elapsed() < Duration::from_secs(5),
+            "timeout should fire quickly, took {:?}",
+            start.elapsed()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_agent_timeout_allows_fast_child() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = make_timeout_test_config(tmp.path(), 1, 0);
+
+        let result = invoke_agent(&config, "dev", "gpt5", &[], &[]);
+        assert!(
+            result.is_ok(),
+            "fast child should not time out: {:?}",
+            result
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_agent_timeout_zero_disables_watchdog() {
+        let tmp = tempfile::tempdir().unwrap();
+        let config = make_timeout_test_config(tmp.path(), 0, 1);
+
+        let start = std::time::Instant::now();
+        let result = invoke_agent(&config, "dev", "gpt5", &[], &[]);
+        assert!(
+            result.is_ok(),
+            "timeout=0 should disable watchdog: {:?}",
+            result
+        );
+        assert!(
+            start.elapsed() >= Duration::from_secs(1),
+            "child should have run for ~1s, took {:?}",
+            start.elapsed()
+        );
     }
 }
 
