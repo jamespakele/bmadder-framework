@@ -27,6 +27,11 @@ kimi27 = "ollama/kimi-k2.7-code:cloud"
 personality = "bmad-agent-dev"
 model = "glm52"
 skill = "bmad-create-epics-and-stories"
+# Optional: run SM as a multi-model consensus via moa-rust. When set, bmadder
+# follows the consensus with a pi apply pass that writes story files.
+# command = "~/apps/moa-rust"
+# args = ["run", "--skill", "{skill}"]
+# file_arg = "--file"
 
 [roles.po]
 personality = "bmad-agent-dev"
@@ -47,6 +52,11 @@ skill = "bmad-quick-dev"
 personality = "bmad-agent-dev"
 model = "dsv4pro"
 skill = "bmad-code-review"
+# Optional: run QA as a multi-model consensus via moa-rust. When set, bmadder
+# follows the consensus with a pi apply pass that applies the PASS/FAIL verdict.
+# command = "~/apps/moa-rust"
+# args = ["run", "--skill", "{skill}"]
+# file_arg = "--file"
 
 [agent_hints]
 specialist = "kimi27"
@@ -72,21 +82,6 @@ args = [
     "--approve",
 ]
 file_arg = "@"
-
-# Optional: use moa-rust for plan phase (multi-model consensus planning)
-# Uncomment and adjust path to enable:
-# plan_command = "~/apps/moa-rust"
-# plan_args = ["run", "--skill", "{skill}"]
-# plan_file_arg = "--file"
-
-# Optional: use moa-rust for QA phase (multi-model consensus review)
-# Uncomment and adjust path to enable. Requires a moa.toml at the project root
-# (or pass --config in qa_args). Reference models review in parallel; an
-# aggregator synthesizes a verdict; bmadder then runs a pi pass to apply the
-# PASS/FAIL decision to the story frontmatter.
-# qa_command = "~/apps/moa-rust"
-# qa_args = ["run", "--skill", "{skill}"]
-# qa_file_arg = "--file"
 
 # --- Hermes Kanban bridge integration ---
 # When bridge_report = true, BMADder auto-emits structured JSONL events to

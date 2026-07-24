@@ -38,6 +38,21 @@ pub struct RoleConfig {
     pub model: String,
     /// BMAD skill directory name under skills_dir (e.g. "bmad-dev-story").
     pub skill: String,
+    /// Optional: override the `[pi_dev]` command for this role (e.g.
+    /// "~/apps/moa-rust" for multi-model consensus). Empty → pi_dev.command.
+    /// When set, this role runs through the override command (the "consensus"
+    /// pass); bmadder then runs a `pi` apply pass to write structured
+    /// decisions, since moa-rust backends have no file-edit tools.
+    #[serde(default)]
+    pub command: String,
+    /// Optional: override args for this role. Empty → pi_dev.args.
+    /// When `command` is set you usually must also set `args` (e.g.
+    /// `["run", "--skill", "{skill}"]` for moa-rust).
+    #[serde(default)]
+    pub args: Vec<String>,
+    /// Optional: file_arg for this role. Empty → pi_dev.file_arg.
+    #[serde(default)]
+    pub file_arg: String,
 }
 
 /// Default limits and timing values.
@@ -86,26 +101,6 @@ pub struct PiDevConfig {
     /// How to pass context files: "@" for pi (default), "--file" for moa-rust.
     #[serde(default = "default_file_arg")]
     pub file_arg: String,
-    /// Optional: separate command for plan phase (e.g. moa-rust for multi-model planning).
-    /// If empty, uses `command`.
-    #[serde(default)]
-    pub plan_command: String,
-    /// Optional: separate args for plan phase. If empty, uses `args`.
-    #[serde(default)]
-    pub plan_args: Vec<String>,
-    /// Optional: file_arg for plan phase. If empty, uses `file_arg`.
-    #[serde(default)]
-    pub plan_file_arg: String,
-    /// Optional: separate command for QA phase (e.g. moa-rust for multi-model review).
-    /// If empty, uses `command`.
-    #[serde(default)]
-    pub qa_command: String,
-    /// Optional: separate args for QA phase. If empty, uses `args`.
-    #[serde(default)]
-    pub qa_args: Vec<String>,
-    /// Optional: file_arg for QA phase. If empty, uses `file_arg`.
-    #[serde(default)]
-    pub qa_file_arg: String,
 }
 
 /// Hermes Kanban bridge integration: whether BMADder reports story state to a
@@ -546,6 +541,26 @@ impl Config {
                     .unwrap_or_else(|| "claude-sonnet-4".into())
             })
     }
+
+    /// True when `role_key` has a per-role command override (e.g. moa-rust).
+    /// When true, that role's consensus pass runs through the override command
+    /// and bmadder follows it with a `pi` apply pass.
+    pub fn role_has_command_override(&self, role_key: &str) -> bool {
+        self.roles
+            .get(role_key)
+            .map(|r| !r.command.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// `"moa-rust"` when the role has a command override, else `"pi"`.
+    /// Used in log banners so the user can see which engine handles a role.
+    pub fn role_engine_label(&self, role_key: &str) -> &'static str {
+        if self.role_has_command_override(role_key) {
+            "moa-rust"
+        } else {
+            "pi"
+        }
+    }
 }
 
 impl DefaultsConfig {
@@ -719,41 +734,60 @@ planning-qa = "glm52"
         let s = config.resolve_skill_path("dev").unwrap();
         assert!(s.ends_with("bmad-dev-story"));
     }
-
     #[test]
-    fn parse_qa_command_override() {
+    fn parse_role_command_override() {
+        // SM uses moa-rust; PO is left as a single-model pi role. This is the
+        // decoupled case the per-role command design enables.
         let toml = r#"
 [pi_dev]
 command = "pi"
 args = ["--model","{model}","--skill","{skill}"]
 file_arg = "@"
-qa_command = "~/apps/moa-rust"
-qa_args = ["run","--skill","{skill}"]
-qa_file_arg = "--file"
+
+[roles.sm]
+personality = "bmad-agent-dev"
+model = "glm52"
+skill = "bmad-create-epics-and-stories"
+command = "~/apps/moa-rust"
+args = ["run","--skill","{skill}"]
+file_arg = "--file"
+
+[roles.po]
+personality = "bmad-agent-dev"
+model = "minim3"
+skill = "bmad-create-epics-and-stories"
 "#;
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("bmadder.toml");
         std::fs::write(&config_path, toml).unwrap();
 
         let config = Config::load(&config_path).unwrap();
-        assert_eq!(config.pi_dev.qa_command, "~/apps/moa-rust");
-        assert_eq!(config.pi_dev.qa_args, vec!["run", "--skill", "{skill}"]);
-        assert_eq!(config.pi_dev.qa_file_arg, "--file");
-        // Defaults remain intact when plan_* unset
-        assert!(config.pi_dev.plan_command.is_empty());
+        // SM override is captured per-role
+        let sm = config.roles.get("sm").unwrap();
+        assert_eq!(sm.command, "~/apps/moa-rust");
+        assert_eq!(sm.args, vec!["run", "--skill", "{skill}"]);
+        assert_eq!(sm.file_arg, "--file");
+        assert!(config.role_has_command_override("sm"));
+        assert_eq!(config.role_engine_label("sm"), "moa-rust");
+        // PO has no override → single-model pi
+        let po = config.roles.get("po").unwrap();
+        assert!(po.command.is_empty());
+        assert!(!config.role_has_command_override("po"));
+        assert_eq!(config.role_engine_label("po"), "pi");
+        // pi_dev defaults remain intact
         assert_eq!(config.pi_dev.command, "pi");
         assert_eq!(config.pi_dev.file_arg, "@");
     }
 
     #[test]
-    fn qa_command_defaults_empty() {
+    fn role_command_defaults_empty() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("bmadder.toml");
         std::fs::write(&config_path, "").unwrap();
         let config = Config::load(&config_path).unwrap();
-        assert!(config.pi_dev.qa_command.is_empty());
-        assert!(config.pi_dev.qa_args.is_empty());
-        assert!(config.pi_dev.qa_file_arg.is_empty());
+        // No roles → no override, label is "pi"
+        assert!(!config.role_has_command_override("qa"));
+        assert_eq!(config.role_engine_label("qa"), "pi");
     }
 
     #[test]

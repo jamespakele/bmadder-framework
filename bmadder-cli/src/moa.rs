@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use bmadder_core::config::{Config, Phase};
 use bmadder_core::story::Story;
 
-use crate::agent::invoke_agent;
+use crate::agent::invoke_agent_default;
 use crate::logging;
 use crate::story_io;
 
@@ -438,7 +438,7 @@ fn run_apply_pass(
     // The apply pass always uses the default pi command (moa-rust can't write
     // structured frontmatter decisions — it only synthesizes prose consensus).
     let model = config.resolve_model(phase, None);
-    let result = invoke_agent(
+    let result = invoke_agent_default(
         config,
         role_key,
         &model,
