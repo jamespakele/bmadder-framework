@@ -68,6 +68,7 @@ pub fn run_qa(
             continue;
         }
 
+        let invoked_at = std::time::SystemTime::now();
         invoke_agent_qa(
             config,
             "qa",
@@ -84,14 +85,18 @@ pub fn run_qa(
         if after_invoke.frontmatter.status == StoryStatus::PendingQA
             && !config.pi_dev.qa_command.is_empty()
         {
-            if let Some(consensus) = moa::find_latest_moa_output(config) {
+            if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                 logging::info(&format!(
                     "Found QA consensus: {}. Applying to story file...",
                     consensus.display()
                 ));
-                moa::apply_qa_consensus(config, &consensus, story, &file_refs)?;
+                if let Err(e) = moa::apply_qa_consensus(config, &consensus, story, &file_refs) {
+                    logging::warn(&format!("QA consensus apply failed: {}", e));
+                }
             } else {
-                logging::warn("QA ran via moa-rust but no consensus output found; status unchanged.");
+                logging::warn(
+                    "QA ran via moa-rust but no consensus output found; status unchanged.",
+                );
             }
         }
 

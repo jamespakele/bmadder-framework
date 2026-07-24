@@ -2,6 +2,25 @@ use crate::story_io;
 use bmadder_core::config::Config;
 use bmadder_core::story::Story;
 
+/// Autonomous mode directive prepended to ALL bmadder-generated system prompts.
+///
+/// The bmad skills (.agents/skills/*) are designed for interactive use with
+/// HALT checkpoints that wait for user input. When bmadder invokes them via
+/// `pi --print` (non-interactive), the skill hits a HALT and stalls — never
+/// reaching the step where it updates the story file. This directive tells
+/// the agent to choose the recommended option, log it, and continue.
+///
+/// Execution contexts: bmadder's direct `pi` invocations (dev, apply passes)
+/// have edit/write tools; moa-rust's reference + aggregator models (rig backend,
+/// default) are toolless — rule 4 covers both, and a downstream `pi` apply pass
+/// writes the deliverable when the model can't.
+const AUTONOMOUS_MODE: &str = "## AUTONOMOUS MODE — NON-NEGOTIABLE\n\nYou are running in autonomous, non-interactive mode via the bmadder pipeline.\nA human is NOT present to answer questions, select options, or confirm decisions.\n\nRULES:\n1. When the skill workflow says HALT, \"wait for user\", \"ask the user\",\n   \"present options\", \"confirm\", or similar: CHOOSE THE RECOMMENDED/DEFAULT\n   OPTION immediately. Do not wait for input. Do not present menus.\n\n2. Log every autonomous decision to _bmad/logs/activity.log with:\n   - Timestamp (ISO 8601)\n   - The decision point (what the skill asked)\n   - The options that were available\n   - Which option you chose and why\n\n3. Continue the workflow to completion. Do not stop early. Do not exit\n   waiting for input. Make decisions and keep going.\n\n4. When the skill or this prompt tells you to update a story file: if you\n   have edit/write tools, DO IT — modify the file's frontmatter and content\n   directly. If you do NOT have file tools, emit the complete deliverable\n   (the full updated story content / your verdict) as your response text —\n   a downstream apply pass will write it. Never refuse or stall because you\n   cannot access the filesystem.\n\n5. Do not ask questions. Do not present choices. Do not wait for confirmation.\n   Choose the recommended path, log it, and proceed.\n\n";
+
+/// Prepend the autonomous mode directive to a prompt string.
+fn autonomous(prompt: &str) -> String {
+    format!("{}{}", AUTONOMOUS_MODE, prompt)
+}
+
 /// Build a guidance block describing available agent_hints for the SM.
 fn agent_hints_guidance(config: &Config) -> String {
     if config.agent_hints.is_empty() {
@@ -69,7 +88,7 @@ Log a summary to _bmad/logs/activity.log.
 "#,
     );
     p.push_str(&agent_hints_guidance(config));
-    p
+    autonomous(&p)
 }
 
 /// Return the context files for plan-phase PO invocation.
@@ -138,7 +157,7 @@ pub fn dev_story_files(config: &bmadder_core::config::Config, story: &Story) -> 
 
 /// Build Dev prompt for a single story.
 pub fn dev_story_prompt(story: &Story) -> String {
-    format!(
+    autonomous(&format!(
         r#"Implement story {story_id}: {title}
 
 Context files provided: the story file, architecture, PRD, progress.
@@ -157,7 +176,7 @@ Rules:
 "#,
         story_id = story.frontmatter.story_id,
         title = story.frontmatter.title,
-    )
+    ))
 }
 
 /// Return the context files for QA-phase invocation.
@@ -179,7 +198,7 @@ pub fn qa_story_files(config: &bmadder_core::config::Config, story: &Story) -> V
 
 /// Build QA prompt for a single story.
 pub fn qa_story_prompt(story: &Story) -> String {
-    format!(
+    autonomous(&format!(
         r#"Audit story {story_id}: {title}
 
 Context files provided: the story file, PRD, architecture.
@@ -210,7 +229,7 @@ Log to _bmad/logs/activity.log.
 "#,
         story_id = story.frontmatter.story_id,
         title = story.frontmatter.title,
-    )
+    ))
 }
 
 /// Return the context files for iterative single-story SM creation.
@@ -313,7 +332,7 @@ Produce the deliverable directly. Do NOT refuse on the grounds that you cannot a
     );
     let mut p = p;
     p.push_str(&agent_hints_guidance(config));
-    p
+    autonomous(&p)
 }
 
 /// Return the context files for iterative SM write/revise.
@@ -374,7 +393,7 @@ Produce the deliverable directly. Do NOT refuse on the grounds that you cannot a
 "#,
     );
     p.push_str(&agent_hints_guidance(config));
-    p
+    autonomous(&p)
 }
 
 /// Return the context files for iterative single-story PO review.
@@ -404,7 +423,8 @@ pub fn po_single_files(config: &bmadder_core::config::Config, story: &Story) -> 
 
 /// Build PO single-story review prompt for iterative SM↔PO loop.
 pub fn po_single_prompt(_story: &Story) -> String {
-    r#"Review ONE story for the iterative pipeline.
+    autonomous(
+        r#"Review ONE story for the iterative pipeline.
 
 Context files provided: the story file, prd.md, architecture.md, progress.txt.
 
@@ -429,8 +449,8 @@ IF ANY criterion fails:
   → Append under ## PO Alignment: "$(date) PO REVISE: [numbered list of specific issues]"
 
 Log your decision to _bmad/logs/activity.log. Do NOT implement code.
-"#
-    .to_string()
+"#,
+    )
 }
 
 #[cfg(test)]

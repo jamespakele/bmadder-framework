@@ -150,7 +150,7 @@ codex  = "gpt5"
 claude = "sonnet"
 
 [defaults]
-max_dev_iterations      = 10
+max_dev_iterations      = 3
 max_sm_iterations       = 5
 max_qa_passes           = 3
 story_timeout_seconds   = 1800
@@ -224,9 +224,9 @@ bmadder [options] <command>
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--config <path>` | auto-discovered | Path to `bmadder.toml` |
-| `--max-iter N` | 10 | Max dev iterations per story |
+| `--max-iter N` | 3 | Max dev iterations per story |
 | `--max-sm-iter N` | 5 | Max SM↔PO revision cycles |
-| `--max-dev-iter N` | 10 | Max dev iterations (alias) |
+| `--max-dev-iter N` | 3 | Max dev iterations (alias) |
 | `--dry-run` | — | Show what would run without executing |
 | `--skip-po` | — | Skip PO gate, auto-approve all drafts |
 | `--skip-sm` | — | Skip SM story creation |

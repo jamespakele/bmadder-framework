@@ -52,7 +52,11 @@ pub fn run_plan(
         logging::info(&format!("{} existing DRAFT stories.", drafts));
     } else {
         let model = config.resolve_model(bmadder_core::config::Phase::Plan, None);
-        logging::info(&format!("Step 1/2: Scrum Master [{}] via {}", model, plan_engine_label(config)));
+        logging::info(&format!(
+            "Step 1/2: Scrum Master [{}] via {}",
+            model,
+            plan_engine_label(config)
+        ));
         logging::log_marker(config, "START", "PRD_SHARD")?;
         logging::log_activity(
             config,
@@ -72,6 +76,7 @@ pub fn run_plan(
         // created new files directly (pi path) or only wrote a moa consensus
         // (moa-rust path) that still needs a formatting pass.
         let before_sm = story_io::list_stories(&config.paths.stories_dir)?;
+        let invoked_at = std::time::SystemTime::now();
 
         if config.dry_run {
             logging::info(
@@ -99,12 +104,16 @@ pub fn run_plan(
         if !config.dry_run && !config.pi_dev.plan_command.is_empty() {
             let after_sm = story_io::list_stories(&config.paths.stories_dir)?;
             if story_io::detect_new_story_file(&before_sm, &after_sm).is_none() {
-                if let Some(consensus) = moa::find_latest_moa_output(config) {
+                if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                     logging::info(&format!(
                         "Found SM consensus: {}. Formatting into story files...",
                         consensus.display()
                     ));
-                    moa::format_consensus_into_stories(config, &consensus, &file_refs)?;
+                    if let Err(e) =
+                        moa::format_consensus_into_stories(config, &consensus, &file_refs)
+                    {
+                        logging::warn(&format!("SM consensus formatting failed: {}", e));
+                    }
                 } else {
                     logging::warn(
                         "SM ran via moa-rust but produced no new stories and no consensus output found.",
@@ -173,6 +182,7 @@ pub fn run_plan(
             );
         }
         let file_refs: Vec<&str> = files.iter().map(|s| s.as_str()).collect();
+        let invoked_at = std::time::SystemTime::now();
 
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke PO with pi --skill");
@@ -195,14 +205,17 @@ pub fn run_plan(
         // before the invoke — robust to pre-existing READY_FOR_DEV stories),
         // run a pi pass to apply the APPROVE/REVISE decisions. The apply prompt
         // limits edits to DRAFT stories, so re-running on a mixed directory is safe.
-        if !config.dry_run && !config.pi_dev.plan_command.is_empty() && !drafts_before_po.is_empty() {
-            if let Some(consensus) = moa::find_latest_moa_output(config) {
+        if !config.dry_run && !config.pi_dev.plan_command.is_empty() && !drafts_before_po.is_empty()
+        {
+            if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                 logging::info(&format!(
                     "Found PO consensus: {}. Applying to {} DRAFT story/stories...",
                     consensus.display(),
                     drafts_before_po.len()
                 ));
-                moa::apply_po_consensus_batch(config, &consensus, &file_refs)?;
+                if let Err(e) = moa::apply_po_consensus_batch(config, &consensus, &file_refs) {
+                    logging::warn(&format!("PO consensus apply failed: {}", e));
+                }
             } else {
                 logging::warn(
                     "PO ran via moa-rust but no consensus output found; DRAFT stories unchanged.",
@@ -211,7 +224,10 @@ pub fn run_plan(
         }
         logging::log_marker(config, "END", "PO_REVIEW")?;
         logging::log_activity(config, "PO", "-", "PO_DONE", "Review complete")?;
-        logging::ok(&format!("PO review complete [{}].", plan_engine_label(config)));
+        logging::ok(&format!(
+            "PO review complete [{}].",
+            plan_engine_label(config)
+        ));
     }
 
     let ready = story_io::count_by_status(&config.paths.stories_dir, StoryStatus::ReadyForDev);

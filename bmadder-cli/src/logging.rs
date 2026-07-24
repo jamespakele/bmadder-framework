@@ -67,7 +67,11 @@ pub fn log_event(config: &Config, event: &StoryEvent) {
     let path = config.events_jsonl_path();
     if let Some(parent) = path.parent() {
         if let Err(e) = std::fs::create_dir_all(parent) {
-            eprintln!("warn: jsonl-events: could not create {}: {}", parent.display(), e);
+            eprintln!(
+                "warn: jsonl-events: could not create {}: {}",
+                parent.display(),
+                e
+            );
             return;
         }
     }
@@ -79,13 +83,21 @@ pub fn log_event(config: &Config, event: &StoryEvent) {
         }
     };
     line.push('\n');
-    match std::fs::OpenOptions::new().create(true).append(true).open(&path) {
+    match std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+    {
         Ok(mut f) => {
- if let Err(e) = f.write_all(line.as_bytes()) {
+            if let Err(e) = f.write_all(line.as_bytes()) {
                 eprintln!("warn: jsonl-events: write error: {}", e);
             }
         }
-        Err(e) => eprintln!("warn: jsonl-events: open error on {}: {}", path.display(), e),
+        Err(e) => eprintln!(
+            "warn: jsonl-events: open error on {}: {}",
+            path.display(),
+            e
+        ),
     }
 }
 
@@ -112,10 +124,7 @@ pub fn log_activity(
         .open(&path)?;
     f.write_all(line.as_bytes())?;
     // Also emit a structured JSONL event when --jsonl-events is enabled.
-    log_event(
-        config,
-        &StoryEvent::simple(actor, story_id, event, detail),
-    );
+    log_event(config, &StoryEvent::simple(actor, story_id, event, detail));
     Ok(())
 }
 

@@ -1,6 +1,6 @@
-use bmadder_core::config::Config;
 use crate::logging;
 use bmadder_core::agent::PiDevOutput;
+use bmadder_core::config::Config;
 use regex::Regex;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
@@ -110,7 +110,14 @@ pub fn invoke_agent(
     files: &[&str],
     extra_args: &[&str],
 ) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
-    invoke_agent_with(config, role_key, model, files, extra_args, CommandMode::Default)
+    invoke_agent_with(
+        config,
+        role_key,
+        model,
+        files,
+        extra_args,
+        CommandMode::Default,
+    )
 }
 
 /// Like invoke_agent but uses plan-specific command/args if configured.
@@ -121,7 +128,14 @@ pub fn invoke_agent_plan(
     files: &[&str],
     extra_args: &[&str],
 ) -> Result<PiDevOutput, Box<dyn std::error::Error>> {
-    invoke_agent_with(config, role_key, model, files, extra_args, CommandMode::Plan)
+    invoke_agent_with(
+        config,
+        role_key,
+        model,
+        files,
+        extra_args,
+        CommandMode::Plan,
+    )
 }
 
 /// Like invoke_agent but uses QA-specific command/args if configured
@@ -146,7 +160,6 @@ pub enum CommandMode {
     /// QA-phase override (`qa_command` / `qa_args` / `qa_file_arg`).
     Qa,
 }
-
 
 fn invoke_agent_with(
     config: &Config,

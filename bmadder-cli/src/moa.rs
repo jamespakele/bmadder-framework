@@ -21,12 +21,23 @@ use crate::agent::invoke_agent;
 use crate::logging;
 use crate::story_io;
 
-/// Find the latest moa-rust consensus output in the project's `output/` directory.
+/// Find the latest moa-rust consensus output in the project's `output/` directory
+/// that was written AFTER `newer_than`.
 ///
 /// moa-rust writes files named `moa-YYYYMMDD-HHMMSS-<hash>.md` (or
 /// `spec-moa-<slug>.md` in bmad-compatible mode). Returns the most recently
-/// modified `moa-*.md` file, or `None` if the directory is empty/missing.
-pub fn find_latest_moa_output(config: &Config) -> Option<PathBuf> {
+/// modified `moa-*.md` file whose mtime is strictly newer than `newer_than`,
+/// or `None` if the directory is empty/missing/no file qualifies.
+///
+/// The `newer_than` gate is load-bearing: callers capture `SystemTime::now()`
+/// just before invoking moa-rust and pass it here. Without it, a failed moa-rust
+/// run (no new file written) would make this return an EARLIER phase's consensus
+/// — e.g. an SM consensus applied as a QA verdict — manufacturing the exact
+/// ambiguous statuses the per-story circuit breaker guards. See incident report.
+pub fn find_latest_moa_output(
+    config: &Config,
+    newer_than: std::time::SystemTime,
+) -> Option<PathBuf> {
     let output_dir = config.project_root.join("output");
     if !output_dir.exists() {
         return None;
@@ -52,7 +63,14 @@ pub fn find_latest_moa_output(config: &Config) -> Option<PathBuf> {
                     .unwrap_or(std::time::SystemTime::UNIX_EPOCH),
             )
     });
-    moa_files.first().cloned()
+    // Only accept a consensus written after the invocation that produced it
+    // started. Stale files (from an earlier phase / failed run) are skipped.
+    moa_files.into_iter().find(|p| {
+        p.metadata()
+            .and_then(|m| m.modified())
+            .map(|t| t > newer_than)
+            .unwrap_or(false)
+    })
 }
 
 /// Run `pi` to convert a moa-rust consensus document into a SINGLE properly
@@ -65,7 +83,7 @@ pub fn format_consensus_as_story(
     let consensus_rel = rel_path(config, consensus_path);
 
     let existing = story_io::list_stories(&config.paths.stories_dir)?;
-    let next_num = existing.len() + 1;
+    let next_num = next_story_num(&existing);
 
     let format_prompt = format!(
         r#"You are the Scrum Master formatting a consensus document into a proper story file.
@@ -176,7 +194,7 @@ pub fn format_consensus_into_stories(
     let consensus_rel = rel_path(config, consensus_path);
 
     let existing = story_io::list_stories(&config.paths.stories_dir)?;
-    let next_num = existing.iter().filter_map(|s| story_num(s)).max().unwrap_or(0) + 1;
+    let next_num = next_story_num(&existing);
 
     let format_prompt = format!(
         r#"You are the Scrum Master formatting a consensus document into properly formatted story files.
@@ -390,6 +408,18 @@ fn story_num(path: &Path) -> Option<usize> {
         .and_then(|n| n.parse().ok())
 }
 
+/// Next story number = max existing NNNN + 1 (falls back to 1 when none/empty).
+/// Gap-safe: with a deleted/renamed story, `len()+1` would collide with an
+/// existing `story-NNNN`; this mirrors the SM prompt's max-based guidance.
+fn next_story_num(existing: &[PathBuf]) -> usize {
+    existing
+        .iter()
+        .filter_map(|s| story_num(s))
+        .max()
+        .unwrap_or(0)
+        + 1
+}
+
 /// Shared apply-pass runner: invokes the default `pi` command with the given
 /// role/model/skill, attaching the consensus file and context files.
 fn run_apply_pass(
@@ -418,9 +448,74 @@ fn run_apply_pass(
 
     if result.success {
         logging::ok(&format!("{} complete.", label));
+        Ok(())
     } else {
-        logging::warn(&format!("{} reported failure: {:?}", label, result.error));
+        // Surface apply-pass failure immediately instead of swallowing it.
+        // Callers catch this and treat it like "no consensus applied" so the
+        // per-story ambiguity/circuit-breaker machinery sees it on THIS
+        // iteration rather than two expensive iterations later.
+        Err(format!("{} reported failure: {:?}", label, result.error).into())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bmadder_core::config::Config;
+
+    fn cfg_with_root(root: &std::path::Path) -> Config {
+        let toml_path = root.join("bmadder.toml");
+        std::fs::write(&toml_path, "").unwrap();
+        Config::load(&toml_path).unwrap()
     }
 
-    Ok(())
+    #[test]
+    fn find_latest_moa_output_gates_on_invocation_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = dir.path().join("output");
+        std::fs::create_dir_all(&output).unwrap();
+        let config = cfg_with_root(dir.path());
+
+        // Pre-existing consensus (stale relative to a future invocation).
+        std::fs::write(output.join("moa-stale.md"), "old").unwrap();
+
+        // An invocation starts now; no new file yet → None (stale file skipped).
+        let invoked_at = std::time::SystemTime::now();
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        assert_eq!(
+            find_latest_moa_output(&config, invoked_at).map(|p| p.file_name().unwrap().to_owned()),
+            None,
+            "stale consensus must not be picked up"
+        );
+
+        // moa-rust writes a fresh consensus after the invocation started.
+        std::fs::write(output.join("moa-fresh.md"), "new").unwrap();
+        let found = find_latest_moa_output(&config, invoked_at).expect("fresh consensus");
+        assert_eq!(found.file_name().unwrap(), "moa-fresh.md");
+    }
+
+    #[test]
+    fn find_latest_moa_output_none_when_dir_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = cfg_with_root(dir.path());
+        assert_eq!(
+            find_latest_moa_output(&config, std::time::SystemTime::now()),
+            None
+        );
+    }
+
+    #[test]
+    fn next_story_num_is_max_plus_one_not_len_plus_one() {
+        let mk = |n: &str| std::path::PathBuf::from(format!("story-{}-slug.md", n));
+        // Gap: 0001 and 0007 exist → next must be 8, not len()+1 == 2.
+        let existing = vec![mk("0001"), mk("0007")];
+        assert_eq!(next_story_num(&existing), 8);
+
+        // Empty dir → 1.
+        assert_eq!(next_story_num(&[]), 1);
+
+        // No numeric segment → falls back to 1.
+        let weird = vec![std::path::PathBuf::from("story-notes.md")];
+        assert_eq!(next_story_num(&weird), 1);
+    }
 }

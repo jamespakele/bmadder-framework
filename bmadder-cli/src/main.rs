@@ -2,8 +2,8 @@ mod agent;
 mod bootstrap;
 mod git;
 mod logging;
-mod phases;
 mod moa;
+mod phases;
 mod prompts;
 mod spec;
 mod story_io;
@@ -13,8 +13,8 @@ use bmadder_core::config::Config;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use std::process;
-use std::process::{Child, Stdio};
 use std::process::Command as StdCommand;
+use std::process::{Child, Stdio};
 
 /// Guard that owns a spawned bridge subprocess and terminates it on drop.
 /// Ensures the bridge dies when BMADder exits (normal, error, or panic

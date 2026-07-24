@@ -54,7 +54,7 @@ generalist = "dsv4pro"
 planning-qa = "glm52"
 
 [defaults]
-max_dev_iterations = 10
+max_dev_iterations = 3
 max_sm_iterations = 5
 max_qa_passes = 3
 story_timeout_seconds = 1800

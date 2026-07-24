@@ -157,7 +157,7 @@ gemini = "gemini_pro"
 # ---------------------------------------------------------------------------
 
 [defaults]
-max_dev_iterations       = 10     # Max dev loop iterations per story
+max_dev_iterations       = 3      # Max dev loop iterations per story
 max_sm_iterations        = 5      # Max SM↔PO revision loops per story
 max_qa_passes            = 3      # Max Dev→QA full-pipeline passes per cycle
 story_timeout_seconds    = 1800   # 30 min per pi.dev invocation
@@ -1245,9 +1245,9 @@ All environment variables from the original bash scripts are preserved. They ove
 | `BMADDER_PLAN_AGENT` | `[roles.sm].model` + `[roles.po].model` | sonnet |
 | `BMADDER_DEV_AGENT` | `[roles.dev].model` | gpt5 |
 | `BMADDER_QA_AGENT` | `[roles.qa].model` | sonnet |
-| `BMADDER_MAX_ITER` | `[defaults].max_dev_iterations` | 10 |
+| `BMADDER_MAX_ITER` | `[defaults].max_dev_iterations` | 3 |
 | `BMADDER_MAX_SM_ITER` | `[defaults].max_sm_iterations` | 5 |
-| `BMADDER_MAX_DEV_ITER` | `[defaults].max_dev_iterations` | 10 |
+| `BMADDER_MAX_DEV_ITER` | `[defaults].max_dev_iterations` | 3 |
 | `BMADDER_STORY_TIMEOUT` | `[defaults].story_timeout_seconds` | 1800 |
 | `BMADDER_CONFIG` | Path to bmadder.toml | auto-discover |
 | `BMADDER_SKIP_PREFLIGHT` | Skip auth preflight | false |
@@ -1472,7 +1472,7 @@ claude = "sonnet"
 gemini = "gemini_pro"
 
 [defaults]
-max_dev_iterations       = 10
+max_dev_iterations       = 3
 max_sm_iterations        = 5
 max_qa_passes            = 3
 story_timeout_seconds    = 1800

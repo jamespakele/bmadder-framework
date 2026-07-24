@@ -1,6 +1,11 @@
 [aggregator]
 provider = "ollama"
 model = "glm-5.2:cloud"
+# skill = ".agents/skills/bmad-create-epics-and-stories"
+# When set, the aggregator performs a two-phase prompt:
+#   Phase 1: synthesize advisor outputs (always)
+#   Phase 2: apply the skill to produce the final deliverable (when skill is set)
+# The --skill CLI flag overrides this at runtime.
 
 [[reference]]
 provider = "ollama"
@@ -19,7 +24,7 @@ label = "deepseek-v4-flash"
 
 [[reference]]
 provider = "ollama"
-model = "minimax-m2.7:cloud"
+model = "minimax-m3:cloud"
 label = "minimax-m3"
 
 [pi]

@@ -27,6 +27,38 @@ fn qa_engine_label(config: &Config) -> &str {
     }
 }
 
+/// Max consecutive stalled stories before the whole pipeline aborts. A broken
+/// QA/apply pipeline is broken for every story; without this cap, Step 2 would
+/// SM-create up to `max_iterations` new stories, each burning dev + QA rounds
+/// against the same broken pipeline (the incident's quota-exhaustion path).
+const MAX_CONSECUTIVE_STALLED: u32 = 2;
+
+/// Update the consecutive-stall counter. Returns true when the pipeline-level
+/// abort threshold is reached. Pure + tested so the breaker logic is locked.
+fn update_stall_counter(consecutive_stalled: &mut u32, stalled: bool) -> bool {
+    if stalled {
+        *consecutive_stalled += 1;
+    } else {
+        *consecutive_stalled = 0;
+    }
+    *consecutive_stalled >= MAX_CONSECUTIVE_STALLED
+}
+
+/// Log a pipeline-level abort (console + activity log).
+fn abort_pipeline(config: &Config, consecutive_stalled: u32) {
+    logging::err(&format!(
+        "{} consecutive stories stalled — aborting pipeline; see per-story STALLED entries.",
+        consecutive_stalled
+    ));
+    let _ = logging::log_activity(
+        config,
+        "ORCH",
+        "-",
+        "PIPELINE_ABORT",
+        &format!("{} consecutive stalls", consecutive_stalled),
+    );
+}
+
 pub fn run_iterative(
     config: &Config,
     from_existing: bool,
@@ -58,6 +90,8 @@ pub fn run_iterative(
 
     let mut completed = 0usize;
     let mut stalled = 0usize;
+    let mut consecutive_stalled: u32 = 0;
+    let mut pipeline_aborted = false;
     let mut total = 0usize;
 
     // Step 1: Resume in-flight stories
@@ -104,16 +138,28 @@ pub fn run_iterative(
         ));
         for story in &in_flight {
             total += 1;
-            match process_one_story(config, story, skip_po, no_commit) {
-                Ok(true) => completed += 1,
-                Ok(false) => stalled += 1,
+            let success = match process_one_story(config, story, skip_po, no_commit) {
+                Ok(true) => {
+                    completed += 1;
+                    true
+                }
+                Ok(false) => {
+                    stalled += 1;
+                    false
+                }
                 Err(e) => {
                     stalled += 1;
                     logging::err(&format!(
                         "Error processing {}: {}",
                         story.frontmatter.story_id, e
                     ));
+                    false
                 }
+            };
+            if update_stall_counter(&mut consecutive_stalled, !success) {
+                abort_pipeline(config, consecutive_stalled);
+                pipeline_aborted = true;
+                break;
             }
         }
     } else {
@@ -126,7 +172,7 @@ pub fn run_iterative(
     let mut iterations = 0u32;
     let max_iterations = 100u32;
 
-    while iterations < max_iterations {
+    while iterations < max_iterations && !pipeline_aborted {
         iterations += 1;
         logging::info(&format!(
             "--- SM iteration {}/{} ---",
@@ -147,16 +193,27 @@ pub fn run_iterative(
                 logging::info(&format!("New story created: {}", new_story_path.display()));
 
                 let story = story_io::parse_story_file(&new_story_path)?;
-                match process_one_story(config, &story, skip_po, no_commit) {
-                    Ok(true) => completed += 1,
-                    Ok(false) => stalled += 1,
+                let success = match process_one_story(config, &story, skip_po, no_commit) {
+                    Ok(true) => {
+                        completed += 1;
+                        true
+                    }
+                    Ok(false) => {
+                        stalled += 1;
+                        false
+                    }
                     Err(e) => {
                         stalled += 1;
                         logging::err(&format!(
                             "Error processing {}: {}",
                             story.frontmatter.story_id, e
                         ));
+                        false
                     }
+                };
+                if update_stall_counter(&mut consecutive_stalled, !success) {
+                    abort_pipeline(config, consecutive_stalled);
+                    break;
                 }
             }
             Ok(None) => {
@@ -296,7 +353,10 @@ fn process_sm_po_loop(
         logging::info(&format!("SM↔PO iteration {}/{}", iter, max_sm_iters));
 
         // Step A: SM write/revise
-        logging::info(&format!("SM: writing/revising story [{}]...", plan_engine_label(config)));
+        logging::info(&format!(
+            "SM: writing/revising story [{}]...",
+            plan_engine_label(config)
+        ));
         let sm_prompt = prompts::sm_write_story_prompt(config, &current);
         let sm_files: Vec<String> = prompts::sm_write_files(config, &current);
         let sm_refs: Vec<&str> = sm_files.iter().map(|s| s.as_str()).collect();
@@ -304,6 +364,7 @@ fn process_sm_po_loop(
         if config.dry_run {
             logging::info("[DRY RUN] Would invoke SM");
         } else {
+            let invoked_at = std::time::SystemTime::now();
             invoke_agent_plan(
                 config,
                 "sm",
@@ -319,19 +380,25 @@ fn process_sm_po_loop(
             // SM↔PO loop spins (PO keeps appending "PO REVISE" blocks to a
             // story whose Requirements/AC never change).
             if !config.pi_dev.plan_command.is_empty() {
-                if let Some(consensus) = moa::find_latest_moa_output(config) {
+                if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                     logging::info(&format!(
                         "Found SM consensus: {}. Revising story file in place...",
                         consensus.display()
                     ));
-                    moa::apply_sm_consensus(config, &consensus, &story, &sm_refs)?;
-
-                    // Guarantee the frontmatter reset so the PO re-reviews
-                    // the revised story. pi is told to set status DRAFT /
-                    // po_alignment PENDING, but it's an LLM editing YAML —
-                    // don't trust it for loop-correctness. Force it here.
-                    story_io::update_story_status(&story.path, StoryStatus::Draft)?;
-                    story_io::update_story_field(&story.path, "po_alignment", "PENDING")?;
+                    match moa::apply_sm_consensus(config, &consensus, &story, &sm_refs) {
+                        Ok(()) => {
+                            // Guarantee the frontmatter reset so the PO re-reviews
+                            // the revised story. pi is told to set status DRAFT /
+                            // po_alignment PENDING, but it's an LLM editing YAML —
+                            // don't trust it for loop-correctness. Force it here.
+                            story_io::update_story_status(&story.path, StoryStatus::Draft)?;
+                            story_io::update_story_field(&story.path, "po_alignment", "PENDING")?;
+                        }
+                        Err(e) => logging::warn(&format!(
+                            "SM consensus apply failed (story body unchanged): {}",
+                            e
+                        )),
+                    }
                 } else {
                     logging::warn("SM produced no consensus output; story body left unchanged.");
                 }
@@ -361,6 +428,7 @@ fn process_sm_po_loop(
             logging::info("[DRY RUN] Would invoke PO");
             break;
         }
+        let invoked_at = std::time::SystemTime::now();
         invoke_agent_plan(
             config,
             "po",
@@ -375,12 +443,14 @@ fn process_sm_po_loop(
         if after_po_first.frontmatter.status == StoryStatus::Draft
             || after_po_first.frontmatter.status == StoryStatus::Revise
         {
-            if let Some(consensus) = moa::find_latest_moa_output(config) {
+            if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                 logging::info(&format!(
                     "Found PO consensus: {}. Applying to story file...",
                     consensus.display()
                 ));
-                moa::apply_po_consensus(config, &consensus, &story, &po_refs)?;
+                if let Err(e) = moa::apply_po_consensus(config, &consensus, &story, &po_refs) {
+                    logging::warn(&format!("PO consensus apply failed: {}", e));
+                }
             }
         }
 
@@ -419,6 +489,14 @@ fn process_dev_qa_loop(
     let max_dev_iters = config.defaults.max_dev_iterations;
     let dev_model = config.resolve_model(Phase::Dev, Some(story));
     let qa_model = config.resolve_model(Phase::QA, None);
+
+    // Circuit breaker: track consecutive ambiguous QA results. If the QA
+    // consensus apply pass fails to update the story status (the pi pass
+    // didn't write PASS/FAIL to the frontmatter), re-running the dev agent
+    // won't fix it — the QA pipeline itself is broken. Break early after
+    // 2 consecutive ambiguous results instead of burning all max_dev_iters.
+    let mut consecutive_ambiguous: u32 = 0;
+    const MAX_CONSECUTIVE_AMBIGUOUS: u32 = 2;
 
     logging::info(&format!(
         "Starting Dev↔QA loop for {} (max {} dev iterations)...",
@@ -512,17 +590,23 @@ fn process_dev_qa_loop(
 
         logging::info(&format!(
             "QA review for {} [{}] via {}",
-            story.frontmatter.story_id, qa_model, qa_engine_label(config)
+            story.frontmatter.story_id,
+            qa_model,
+            qa_engine_label(config)
         ));
         let qa_prompt = prompts::qa_story_prompt(&after_dev);
         let qa_files: Vec<String> = prompts::qa_story_files(config, &after_dev);
         let qa_refs: Vec<&str> = qa_files.iter().map(|s| s.as_str()).collect();
 
         if config.dry_run {
-            logging::info(&format!("[DRY RUN] Would invoke QA agent via {}", qa_engine_label(config)));
+            logging::info(&format!(
+                "[DRY RUN] Would invoke QA agent via {}",
+                qa_engine_label(config)
+            ));
             return Ok(true);
         }
 
+        let invoked_at = std::time::SystemTime::now();
         invoke_agent_qa(
             config,
             "qa",
@@ -538,14 +622,18 @@ fn process_dev_qa_loop(
         if after_invoke.frontmatter.status == StoryStatus::PendingQA
             && !config.pi_dev.qa_command.is_empty()
         {
-            if let Some(consensus) = moa::find_latest_moa_output(config) {
+            if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
                 logging::info(&format!(
                     "Found QA consensus: {}. Applying to story file...",
                     consensus.display()
                 ));
-                moa::apply_qa_consensus(config, &consensus, story, &qa_refs)?;
+                if let Err(e) = moa::apply_qa_consensus(config, &consensus, story, &qa_refs) {
+                    logging::warn(&format!("QA consensus apply failed: {}", e));
+                }
             } else {
-                logging::warn("QA ran via moa-rust but no consensus output found; status unchanged.");
+                logging::warn(
+                    "QA ran via moa-rust but no consensus output found; status unchanged.",
+                );
             }
         }
 
@@ -590,6 +678,7 @@ fn process_dev_qa_loop(
                 return Ok(true);
             }
             StoryStatus::Refix => {
+                consecutive_ambiguous = 0;
                 logging::warn(&format!(
                     "QA sent {} back to REFIX. Looping dev...",
                     story.frontmatter.story_id
@@ -604,10 +693,13 @@ fn process_dev_qa_loop(
                 // Continue to next dev iteration
             }
             other => {
+                consecutive_ambiguous += 1;
                 logging::warn(&format!(
-                    "Ambiguous QA result for {}: status={}. Forcing REFIX.",
+                    "Ambiguous QA result for {}: status={}. Forcing REFIX. (consecutive ambiguous: {}/{})",
                     story.frontmatter.story_id,
-                    other.label()
+                    other.label(),
+                    consecutive_ambiguous,
+                    MAX_CONSECUTIVE_AMBIGUOUS,
                 ));
                 story_io::update_story_status(&story.path, StoryStatus::Refix)?;
                 story_io::update_story_field(&story.path, "qa_status", "FAIL")?;
@@ -621,6 +713,27 @@ fn process_dev_qa_loop(
                         "ambiguous QA result forced REFIX",
                     ),
                 );
+
+                // Circuit breaker: if the QA consensus apply pass fails
+                // repeatedly, the QA pipeline is broken — re-running dev
+                // won't help. Stop now to avoid wasting model calls.
+                if consecutive_ambiguous >= MAX_CONSECUTIVE_AMBIGUOUS {
+                    logging::err(&format!(
+                        "{} stalled: {} consecutive ambiguous QA results — QA consensus apply pass is not updating story status.",
+                        story.frontmatter.story_id, consecutive_ambiguous,
+                    ));
+                    logging::log_activity(
+                        config,
+                        "ORCH",
+                        &story.frontmatter.story_id,
+                        "STALLED",
+                        &format!(
+                            "consecutive_ambiguous={} — QA pipeline broken",
+                            consecutive_ambiguous,
+                        ),
+                    )?;
+                    return Ok(false);
+                }
             }
         }
     }
@@ -684,7 +797,11 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     // List stories before invoking SM
     let before = story_io::list_stories(&config.paths.stories_dir)?;
 
-    logging::info(&format!("SM: creating next story [{}] via {}...", model, plan_engine_label(config)));
+    logging::info(&format!(
+        "SM: creating next story [{}] via {}...",
+        model,
+        plan_engine_label(config)
+    ));
     logging::log_activity(
         config,
         "ORCH",
@@ -702,6 +819,7 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
         return Ok(None);
     }
 
+    let invoked_at = std::time::SystemTime::now();
     invoke_agent_plan(
         config,
         "sm",
@@ -716,12 +834,14 @@ fn sm_create_next_story(config: &Config) -> Result<Option<PathBuf>, Box<dyn std:
     let after_plan = story_io::list_stories(&config.paths.stories_dir)?;
     if after_plan.len() == before.len() {
         // No story file was created directly — check for moa consensus output
-        if let Some(consensus) = moa::find_latest_moa_output(config) {
+        if let Some(consensus) = moa::find_latest_moa_output(config, invoked_at) {
             logging::info(&format!(
                 "Found moa consensus: {}. Formatting into story file...",
                 consensus.display()
             ));
-            moa::format_consensus_as_story(config, &consensus, &file_refs)?;
+            if let Err(e) = moa::format_consensus_as_story(config, &consensus, &file_refs) {
+                logging::warn(&format!("SM consensus formatting failed: {}", e));
+            }
         }
     }
 
@@ -797,5 +917,29 @@ mod check_all_done_tests {
         let dir = tempfile::tempdir().unwrap();
         let config = cfg_in(dir.path());
         assert_eq!(check_all_done(&config).unwrap(), false);
+    }
+}
+
+#[cfg(test)]
+mod stall_counter_tests {
+    use super::*;
+
+    #[test]
+    fn resets_on_success_and_aborts_at_threshold() {
+        let mut c = 0u32;
+        // Two stalls in a row → abort threshold (MAX_CONSECUTIVE_STALLED = 2).
+        assert!(!update_stall_counter(&mut c, true));
+        assert!(update_stall_counter(&mut c, true));
+        assert_eq!(c, 2);
+        // A success resets the run.
+        assert!(!update_stall_counter(&mut c, false));
+        assert_eq!(c, 0);
+    }
+
+    #[test]
+    fn threshold_is_two_consecutive() {
+        let mut c = 0u32;
+        assert!(!update_stall_counter(&mut c, true));
+        assert!(update_stall_counter(&mut c, true));
     }
 }

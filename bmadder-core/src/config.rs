@@ -58,7 +58,7 @@ pub struct DefaultsConfig {
 }
 
 fn default_max_dev_iterations() -> u32 {
-    10
+    3
 }
 fn default_max_sm_iterations() -> u32 {
     5
@@ -155,7 +155,6 @@ fn default_hermes_home() -> String {
     "~/.hermes".into()
 }
 
-
 impl Default for HermesConfig {
     fn default() -> Self {
         Self {
@@ -201,7 +200,11 @@ impl HermesConfig {
     /// layout), falling back to `hermes` on PATH if not found.
     pub fn hermes_binary(&self) -> String {
         let home = Self::expand_home(&self.hermes_home);
-        let candidate = Path::new(&home).join("hermes-agent").join("venv").join("bin").join("hermes");
+        let candidate = Path::new(&home)
+            .join("hermes-agent")
+            .join("venv")
+            .join("bin")
+            .join("hermes");
         if candidate.exists() {
             candidate.to_string_lossy().to_string()
         } else {
@@ -227,7 +230,9 @@ impl HermesConfig {
     /// resolved path does not exist on disk.
     pub fn bridge_script_path(&self, project_root: &Path) -> Option<PathBuf> {
         let candidate = if self.bridge_script.is_empty() {
-            project_root.join("scripts").join("bmadder-kanban-bridge.py")
+            project_root
+                .join("scripts")
+                .join("bmadder-kanban-bridge.py")
         } else {
             let p = PathBuf::from(&self.bridge_script);
             if p.is_absolute() {
@@ -628,7 +633,7 @@ planning-qa = "glm52"
         let config = Config::load(&config_path).unwrap();
         assert!(config.models.is_empty());
         assert!(config.roles.is_empty());
-        assert_eq!(config.defaults.max_dev_iterations, 10);
+        assert_eq!(config.defaults.max_dev_iterations, 3);
         assert_eq!(config.defaults.story_timeout_seconds, 1800);
     }
 
@@ -767,7 +772,11 @@ qa_file_arg = "--file"
     fn hermes_config_bridge_report_enables_jsonl() {
         let dir = tempfile::tempdir().unwrap();
         let config_path = dir.path().join("bmadder.toml");
-        std::fs::write(&config_path, "[hermes]\nbridge_report = true\nproject_slug = \"ai-r3\"\n").unwrap();
+        std::fs::write(
+            &config_path,
+            "[hermes]\nbridge_report = true\nproject_slug = \"ai-r3\"\n",
+        )
+        .unwrap();
         let config = Config::load(&config_path).unwrap();
         assert!(config.hermes.bridge_report);
         assert_eq!(config.hermes.project_slug, "ai-r3");
